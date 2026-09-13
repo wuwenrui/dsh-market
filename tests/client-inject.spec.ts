@@ -1,95 +1,30 @@
-/**
- * What the market's client declares it needs, against what it touches.
- *
- * `dsh.client.inject` is a HARD gate: the host holds the client entry back
- * until every listed seam exists. A seam that is listed but never used is
- * therefore not free — it is a version of the host the market refuses to
- * run on, bought for nothing.
- *
- * That is not hypothetical. @MarchLiu found (#554) that on dsh 0.1.2-rc.1
- * the market's presence silently stopped `dsh-context` from registering its
- * commands, and traced it by binary search to the market's entry alone. The
- * market listed `@deepseek-ai/dsh-client-runtime` — a seam that release
- * ships incompletely, and that had already hard-failed another plugin's
- * boot — and `@deepseek-ai/dsh-client-connection`, and used NEITHER. Both
- * had been in the manifest since 0.1.0 and never removed when the code that
- * might have needed them was not written.
- *
- * This test is the thing that was missing: a declaration and its use, kept
- * next to each other. It reads the client source rather than a hand-written
- * list, so adding `ctx.something` without declaring its seam fails too.
- */
-
+/** LawyerDesk keeps client seam admission in the managed entry, not package metadata. */
 import { describe, expect, it } from 'vitest'
 import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 
-/** The host services the client entry actually reaches for. */
-function servicesUsed(): Set<string> {
-  const source = readFileSync(resolve('src/client/index.ts'), 'utf8')
-  const used = new Set<string>()
-  // `ctx.locale`, `ctx.theme`, `ctx.slots`, … — the property access IS the
-  // dependency, which is why this is read from the source and not declared.
-  for (const match of source.matchAll(/\bctx\.([a-zA-Z][a-zA-Z0-9]*)/g)) used.add(match[1]!)
-  // Nested injects name their service as a string instead.
-  for (const match of source.matchAll(/\.inject\(\[([^\]]*)\]/g)) {
-    for (const name of match[1]!.split(',')) {
-      const clean = name.trim().replace(/^['"`]|['"`]$/g, '')
-      if (clean !== '') used.add(clean)
-    }
-  }
-  return used
+const packageJson = JSON.parse(readFileSync(resolve('package.json'), 'utf8')) as {
+  dsh?: { client?: { inject?: unknown } }
 }
+const clientSource = readFileSync(resolve('src/client/index.ts'), 'utf8')
+const entryInject = [...clientSource.matchAll(/export const inject = \[([^\]]*)\]/g)][0]?.[1]
+  ?.split(',')
+  .map(value => value.trim().replace(/^['"`]|['"`]$/g, ''))
+  .filter(Boolean) ?? []
 
-/**
- * Which service each declared seam provides.
- *
- * Only the seams the market has ever listed need an entry; an unknown one
- * fails the test below, which is the point — a new inject has to be
- * justified by naming what it provides.
- */
-const SEAM_PROVIDES: Record<string, string> = {
-  '@deepseek-ai/dsh-client-locale': 'locale',
-  '@deepseek-ai/dsh-client-ui-settings': 'slots',
-  '@deepseek-ai/dsh-client-ui-theme': 'theme',
-  '@deepseek-ai/dsh-client-connection': 'connection',
-  '@deepseek-ai/dsh-client-runtime': 'runtime',
-}
-
-const declared: string[] = (JSON.parse(readFileSync(resolve('package.json'), 'utf8')) as {
-  dsh: { client: { inject: string[] } }
-}).dsh.client.inject
-
-describe('dsh.client.inject', () => {
-  it('declares only seams the client entry actually uses (#554)', () => {
-    const used = servicesUsed()
-    const unused = declared.filter(seam => {
-      const service = SEAM_PROVIDES[seam]
-      expect(service, `unknown seam ${seam}: add what it provides to SEAM_PROVIDES`).toBeDefined()
-      return !used.has(service!)
-    })
-    // Every entry here is a host version the market will not start on, in
-    // exchange for nothing.
-    expect(unused).toEqual([])
+describe('managed client seam admission', () => {
+  it('does not use upstream package-level dsh.client.inject gating', () => {
+    expect(packageJson.dsh?.client?.inject).toBeUndefined()
   })
 
-  it('declares every seam the client entry depends on at module level', () => {
-    // The other direction: reaching for `ctx.locale` without declaring the
-    // locale seam means the entry runs before the service exists.
-    const used = servicesUsed()
-    const provided = new Set(declared.map(seam => SEAM_PROVIDES[seam]))
-    // `effect` and `on` are cordis's own, not seams; the optional
-    // `settingsScope` seam is deliberately absent from this managed client.
-    const ownedByCordis = new Set(['effect', 'on', 'settingsScope'])
-    const missing = [...used].filter(service => !provided.has(service) && !ownedByCordis.has(service))
-    expect(missing).toEqual([])
+  it('declares the exact seams used by the managed client entry', () => {
+    expect(entryInject).toEqual(['slots', 'locale', 'theme'])
+    expect(clientSource).not.toContain("inject(['settingsScope']")
   })
 
-  it('does not gate the whole entry on an optional settings service', () => {
-    // The managed client only uses the product-owned model and market
-    // sections. It must not acquire the upstream settings-scope seam, whose
-    // absence on older hosts must not hide the managed market entry.
-    expect(declared).not.toContain('@deepseek-ai/dsh-client-ui-settings-scope')
-    expect(readFileSync(resolve('src/client/index.ts'), 'utf8')).not.toContain("inject(['settingsScope']")
+  it('keeps the managed package client surface available without optional settings metadata', () => {
+    expect(packageJson.dsh?.client).toMatchObject({ platform: 'web' })
+    expect(clientSource).toContain("ctx.slots.inject('settings.section'")
+    expect(clientSource).toContain("ctx.locale.register('lawyer-market'")
   })
 })
