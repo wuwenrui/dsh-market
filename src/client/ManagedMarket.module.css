@@ -1,0 +1,1178 @@
+/* Managed market ("律师能力") stylesheet.
+ *
+ * Same system as Market.module.css: every color is a --dsw-alias-* token with
+ * its light-mode literal as fallback, so this sheet looks right on a host
+ * that ships the tokens and stays readable on one that does not. The host
+ * defines those tokens for both themes (ui-theme design-platform.css, light
+ * `:root` / dark `body[data-ds-dark-theme]`), so the dark block only restates
+ * the fallbacks for a host without them.
+ *
+ * The managed section renders plain markup rather than ui-primitives, so the
+ * buttons, cards, progress rail, and confirmation dialog are drawn here.
+ * Colors live in the aliases below and nowhere else. */
+
+.root,
+.overlay {
+  --mm-surface: var(--dsw-alias-bg-layer-1, #ffffff);
+  --mm-surface-2: var(--dsw-alias-bg-layer-2, #f7f8fa);
+  --mm-line-1: var(--dsw-alias-border-l1, #eceff3);
+  --mm-line-2: var(--dsw-alias-border-l2, #e5e7eb);
+  --mm-line-3: var(--dsw-alias-border-l3, #d9dde3);
+  --mm-fg: var(--dsw-alias-label-primary, #1f2328);
+  --mm-fg-2: var(--dsw-alias-label-secondary, #6b7280);
+  --mm-fg-3: var(--dsw-alias-label-tertiary, #8b93a1);
+  --mm-brand: var(--dsw-alias-brand-primary, #4f6ef7);
+  --mm-brand-hover: var(--dsw-alias-button-primary-hover, #3f56c9);
+  --mm-on-brand: var(--dsw-alias-label-primary-foreground, #ffffff);
+  --mm-on-danger: var(--dsw-static-neutral-bluish-00, #ffffff);
+  --mm-hover: var(--dsw-alias-interactive-bg-hover, rgba(38, 49, 72, .06));
+  --mm-info: var(--dsw-alias-state-business-primary, #4176e6);
+  --mm-info-soft: var(--dsw-alias-state-business-tertiary, rgba(65, 118, 230, .1));
+  --mm-success: var(--dsw-alias-state-success-primary, #16a34a);
+  --mm-success-soft: var(--dsw-alias-state-success-tertiary, rgba(22, 163, 74, .1));
+  --mm-warn: var(--dsw-alias-state-warn-primary, #b45309);
+  --mm-warn-soft: var(--dsw-alias-state-warn-tertiary, rgba(180, 83, 9, .1));
+  --mm-danger: var(--dsw-alias-state-error-primary, #dc2626);
+  --mm-danger-soft: var(--dsw-alias-interactive-bg-hover-danger, rgba(220, 38, 38, .08));
+  --mm-mask: var(--dsw-alias-bg-mask-3, rgba(15, 17, 21, .48));
+  --mm-shadow-1: var(--dsw-shadow-lv1, 0 2px 4px rgba(0, 0, 0, .05));
+  --mm-shadow-2: var(--dsw-shadow-lv2, 0 12px 32px rgba(15, 17, 21, .14));
+  --mm-ease: 160ms cubic-bezier(.16, 1, .3, 1);
+}
+
+/* Scoped border-box: the component's panels, inputs, and dialog all carry
+ * padding next to a width, and the host's reset does not reach plugin CSS. */
+.root *,
+.root *::before,
+.root *::after,
+.overlay *,
+.overlay *::before,
+.overlay *::after {
+  box-sizing: border-box;
+}
+
+/* Page header: title and subtitle own the left column, the refresh action the
+ * right, and the rule underneath separates the header from the two lists. */
+.root {
+  display: block;
+  width: 100%;
+  max-width: 1040px;
+  padding: 4px 6px 24px;
+  color: var(--mm-fg);
+  font-size: 13px;
+  line-height: 1.65;
+}
+
+.header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  flex-wrap: wrap;
+  margin: 0 0 16px;
+  padding: 0 0 12px;
+  border-bottom: 1px solid var(--mm-line-1);
+}
+
+.title {
+  margin: 0;
+  font-size: 16px;
+  line-height: 24px;
+  font-weight: 600;
+  color: var(--mm-fg);
+}
+
+.subtitle {
+  max-width: 640px;
+  margin: 4px 0 0;
+  font-size: 12px;
+  line-height: 19px;
+  color: var(--mm-fg-3);
+}
+
+.headerActions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: none;
+}
+
+/* One section per list. The count pill repeats the number the grid shows so a
+ * long list reads as "12 capabilities" before any card is scanned. */
+.section {
+  display: block;
+  margin: 22px 0 0;
+}
+
+.sectionHead {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin: 0 0 10px;
+}
+
+.sectionTitle {
+  margin: 0;
+  font-size: 13px;
+  line-height: 20px;
+  font-weight: 600;
+  color: var(--mm-fg);
+}
+
+.sectionCount {
+  display: inline-flex;
+  align-items: center;
+  height: 18px;
+  padding: 0 7px;
+  border-radius: 99px;
+  background: var(--mm-surface-2);
+  color: var(--mm-fg-2);
+  font-size: 11px;
+  line-height: 18px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+.sectionHint {
+  margin: 0;
+  font-size: 11.5px;
+  line-height: 18px;
+  color: var(--mm-fg-3);
+}
+
+/* Cards: one capability per card, laid out as [category mark | text | action].
+ * The action sits in the top-right of its own card — the same reading order as
+ * the market's own cards — so a row never shows a dead gap under a short
+ * description. Columns are dealt by the component (container-aware), and cards
+ * size to their content instead of stretching to a taller neighbour. */
+.columns {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+}
+
+.column {
+  display: flex;
+  flex: 1 1 0;
+  flex-direction: column;
+  gap: 12px;
+  min-width: 0;
+}
+
+.card {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  min-width: 0;
+  padding: 12px 14px;
+  border: 1px solid var(--mm-line-2);
+  border-radius: 12px;
+  background: var(--mm-surface);
+  transition: border-color var(--mm-ease), box-shadow var(--mm-ease), background-image var(--mm-ease);
+}
+
+.card:hover {
+  border-color: var(--mm-line-3);
+  /* Layered over the opaque surface, so the wash composites the same way in
+     both themes instead of letting the dialog background through. */
+  background-image: linear-gradient(var(--mm-hover), var(--mm-hover));
+  box-shadow: var(--mm-shadow-1);
+}
+
+/* The category mark carries the one spot of color on the card; the letter is
+ * the category itself, so the mark stays meaningful without an icon asset. */
+.mark {
+  display: grid;
+  flex: none;
+  place-items: center;
+  width: 26px;
+  height: 26px;
+  margin-top: 1px;
+  border-radius: 8px;
+  background: var(--mm-info-soft);
+  color: var(--mm-info);
+  font-size: 12px;
+  line-height: 1;
+  font-weight: 600;
+}
+
+.cardMain {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 0;
+}
+
+.cardHead {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+
+.name {
+  margin: 0;
+  font-size: 13.5px;
+  line-height: 20px;
+  font-weight: 600;
+  color: var(--mm-fg);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Provenance/state chips ride the title line, right-aligned. */
+.cardHead .badge {
+  margin-left: auto;
+}
+
+.cardHead .badge + .badge {
+  margin-left: 0;
+}
+
+.meta {
+  margin: 0;
+  font-size: 11px;
+  line-height: 17px;
+  color: var(--mm-fg-3);
+  font-variant-numeric: tabular-nums;
+}
+
+.description {
+  margin: 0;
+  font-size: 12px;
+  line-height: 19px;
+  color: var(--mm-fg-2);
+  overflow-wrap: anywhere;
+}
+
+/* Clamped on cards only: the same class describes the capability inside the
+ * confirmation dialog, where truncation would hide what is being installed. */
+.card .description {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  overflow: hidden;
+}
+
+.cardActions {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+/* 卡片上的操作按钮必须等宽等高：只按文字宽度排会让「卸载」和「更新」在
+   卡片之间一宽一窄，视觉上像没对齐（实测反馈）。 */
+.cardActions > button {
+  min-width: 72px;
+  justify-content: center;
+  white-space: nowrap;
+}
+
+/* ── 已安装 / 可安装 tab + 搜索 ───────────────────────────────────────── */
+.toolbar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 18px 0 4px;
+  border-bottom: 1px solid var(--mm-line-1);
+}
+
+.tab,
+.tabActive {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 12px;
+  border: none;
+  border-bottom: 2px solid transparent;
+  margin-bottom: -1px;
+  background: transparent;
+  color: var(--mm-fg-2);
+  font: inherit;
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+}
+
+.tab:hover { color: var(--mm-fg); }
+
+.tabActive {
+  color: var(--mm-fg);
+  border-bottom-color: var(--mm-brand);
+}
+
+.tabCount {
+  padding: 0 6px;
+  border-radius: 999px;
+  background: var(--mm-surface-2);
+  color: var(--mm-fg-3);
+  font-size: 11px;
+  line-height: 18px;
+}
+
+.tabBadge {
+  padding: 0 6px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--mm-brand) 14%, transparent);
+  color: var(--mm-brand);
+  font-size: 11px;
+  line-height: 18px;
+}
+
+.search {
+  display: flex;
+  flex: 1 1 200px;
+  justify-content: flex-end;
+  margin-left: auto;
+  padding-bottom: 6px;
+}
+
+.search input {
+  width: 100%;
+  max-width: 260px;
+  height: 30px;
+  padding: 0 10px;
+  border: 1px solid var(--mm-line-1);
+  border-radius: 8px;
+  background: var(--mm-surface);
+  color: var(--mm-fg);
+  font-size: 12px;
+}
+
+.search input:focus {
+  outline: none;
+  border-color: var(--mm-brand);
+}
+
+/* Badges carry provenance and state. The kind is read from data-kind, which
+ * is what the component sets; the same names exist as classes for callers
+ * that style a badge directly. */
+.badge {
+  display: inline-flex;
+  align-items: center;
+  height: 20px;
+  padding: 0 7px;
+  border-radius: 6px;
+  background: var(--mm-surface-2);
+  color: var(--mm-fg-2);
+  font-size: 11px;
+  line-height: 18px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+/* A card head and the restart banner both lead with text and end in badges. */
+.cardHead .badge,
+.restartHead .badge {
+  margin-left: auto;
+}
+
+.badgeOwned,
+.badge[data-kind='owned'] {
+  background: var(--mm-info-soft);
+  color: var(--mm-info);
+}
+
+.badgeCommunity,
+.badge[data-kind='community'] {
+  background: var(--mm-surface-2);
+  color: var(--mm-fg-2);
+}
+
+.badgeInstalled,
+.badge[data-kind='installed'] {
+  background: var(--mm-success-soft);
+  color: var(--mm-success);
+}
+
+/* 「可更新」要能和「已安装」并排被一眼分开：已安装是绿的，可更新用品牌色。 */
+.badgeUpdate,
+.badge[data-kind='update'] {
+  background: color-mix(in srgb, var(--mm-brand) 14%, transparent);
+  color: var(--mm-brand);
+}
+
+.badgeIncompatible {
+  background: var(--mm-warn-soft);
+  color: var(--mm-warn);
+}
+
+/* Primary is a solid brand fill with the token's own foreground, so the
+ * contrast flips with the theme instead of assuming white text. */
+.actionPrimary,
+.dialogPrimary {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 30px;
+  padding: 0 14px;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  background: var(--mm-brand);
+  color: var(--mm-on-brand);
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 18px;
+  white-space: nowrap;
+  cursor: pointer;
+  transition: background var(--mm-ease), border-color var(--mm-ease), opacity var(--mm-ease);
+}
+
+.actionPrimary:hover:not(:disabled),
+.dialogPrimary:hover:not(:disabled) {
+  background: var(--mm-brand-hover);
+}
+
+.actionGhost,
+.dialogGhost {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 30px;
+  padding: 0 12px;
+  border: 1px solid var(--mm-line-2);
+  border-radius: 8px;
+  background: transparent;
+  color: var(--mm-fg-2);
+  font-size: 12px;
+  font-weight: 500;
+  line-height: 18px;
+  white-space: nowrap;
+  cursor: pointer;
+  transition: background var(--mm-ease), border-color var(--mm-ease), color var(--mm-ease), opacity var(--mm-ease);
+}
+
+.actionGhost:hover:not(:disabled),
+.dialogGhost:hover:not(:disabled) {
+  background: var(--mm-hover);
+  border-color: var(--mm-line-3);
+  color: var(--mm-fg);
+}
+
+.dialogDanger {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 30px;
+  padding: 0 14px;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  background: var(--mm-danger);
+  color: var(--mm-on-danger);
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 18px;
+  white-space: nowrap;
+  cursor: pointer;
+  transition: filter var(--mm-ease), opacity var(--mm-ease);
+}
+
+.dialogDanger:hover:not(:disabled) {
+  filter: brightness(.94);
+}
+
+/* Banners share one shape: a tinted panel, a title, the body, an optional
+ * hint, and the action that resolves it. The tint is the theme's soft state
+ * fill, so warning/success/info read the same in dark mode. */
+.alert {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin: 12px 0;
+  padding: 11px 13px;
+  border: 1px solid var(--mm-line-1);
+  border-radius: 10px;
+  background: var(--mm-surface-2);
+  color: var(--mm-fg);
+  font-size: 12px;
+  line-height: 19px;
+}
+
+.alertTitle {
+  font-size: 12.5px;
+  line-height: 19px;
+  font-weight: 600;
+  color: var(--mm-fg);
+}
+
+.alertBody {
+  margin: 0;
+  color: var(--mm-fg-2);
+  overflow-wrap: anywhere;
+}
+
+.alertHint {
+  margin: 0;
+  font-size: 11px;
+  line-height: 17px;
+  color: var(--mm-fg-3);
+}
+
+.alertActions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin: 4px 0 0;
+}
+
+.restartHead {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.alertInfo,
+.alert[data-kind='info'] {
+  background: var(--mm-info-soft);
+}
+
+.alertWarning,
+.alert[data-kind='warning'] {
+  background: var(--mm-warn-soft);
+}
+
+.alertSuccess,
+.alert[data-kind='success'] {
+  background: var(--mm-success-soft);
+}
+
+.alertInfo .alertTitle,
+.alert[data-kind='info'] .alertTitle {
+  color: var(--mm-info);
+}
+
+.alertWarning .alertTitle,
+.alert[data-kind='warning'] .alertTitle {
+  color: var(--mm-warn);
+}
+
+.alertSuccess .alertTitle,
+.alert[data-kind='success'] .alertTitle {
+  color: var(--mm-success);
+}
+
+.alert[data-kind='danger'] {
+  background: var(--mm-danger-soft);
+}
+
+.alert[data-kind='danger'] .alertTitle,
+.alert[data-kind='danger'] .alertBody {
+  color: var(--mm-danger);
+}
+
+/* Install progress: the four host stages as a dot rail plus the bar the user
+ * actually watches. Only one operation runs at a time, so the rail is the
+ * whole state of the plugin environment. */
+.progress {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin: 12px 0;
+  padding: 12px 14px;
+  border: 1px solid var(--mm-line-2);
+  border-radius: 12px;
+  background: var(--mm-surface-2);
+}
+
+.progressHead {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.progressTitle {
+  font-size: 12.5px;
+  line-height: 19px;
+  font-weight: 600;
+  color: var(--mm-fg);
+}
+
+.progressCount {
+  font-size: 11px;
+  line-height: 18px;
+  color: var(--mm-fg-2);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.progressSteps {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 14px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.step {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  font-size: 11.5px;
+  line-height: 18px;
+  color: var(--mm-fg-3);
+}
+
+.stepDot {
+  flex: none;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--mm-line-3);
+  transition: background var(--mm-ease), box-shadow var(--mm-ease);
+}
+
+.stepOn {
+  color: var(--mm-fg);
+  font-weight: 600;
+}
+
+.stepOn .stepDot {
+  background: var(--mm-brand);
+  box-shadow: 0 0 0 3px var(--mm-info-soft);
+}
+
+.stepDone {
+  color: var(--mm-fg-2);
+}
+
+.stepDone .stepDot {
+  background: var(--mm-success);
+}
+
+.stepLabel {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.progressBar {
+  height: 6px;
+  border-radius: 99px;
+  background: var(--mm-line-1);
+  overflow: hidden;
+}
+
+.progressFill {
+  display: block;
+  height: 100%;
+  border-radius: 99px;
+  background: var(--mm-brand);
+  transition: width .4s cubic-bezier(.16, 1, .3, 1);
+}
+
+.progressHint {
+  margin: 0;
+  font-size: 11px;
+  line-height: 17px;
+  color: var(--mm-fg-3);
+}
+
+/* Empty installed list: dashed rather than bordered, so "nothing here yet"
+ * cannot be mistaken for a capability card. */
+.emptyCard {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  padding: 28px 18px;
+  border: 1px dashed var(--mm-line-2);
+  border-radius: 12px;
+  background: var(--mm-surface-2);
+  text-align: center;
+}
+
+.emptyTitle {
+  margin: 0;
+  font-size: 13px;
+  line-height: 20px;
+  font-weight: 600;
+  color: var(--mm-fg);
+}
+
+.emptyHint {
+  max-width: 420px;
+  margin: 0;
+  font-size: 12px;
+  line-height: 19px;
+  color: var(--mm-fg-3);
+}
+
+.footer {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+  margin: 18px 0 0;
+  padding: 10px 0 0;
+  border-top: 1px solid var(--mm-line-1);
+}
+
+.footer .muted {
+  margin: 0;
+}
+
+.muted {
+  margin: 0 0 10px;
+  font-size: 11.5px;
+  line-height: 18px;
+  color: var(--mm-fg-3);
+}
+
+/* Confirmation dialog. It replaces window.confirm, so it has to show what
+ * will change (the meta table), the consequence (the note), and the one
+ * decision — nothing else competes for attention. */
+.overlay {
+  position: fixed;
+  inset: 0;
+  /* Above the settings dialog this section lives in; that dialog's own layer
+     is owned by the host shell, so this out-ranks any plausible value. */
+  z-index: 10000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 16px;
+  background: var(--mm-mask);
+  backdrop-filter: blur(4px);
+  -webkit-backdrop-filter: blur(4px);
+}
+
+.dialog {
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  max-width: 460px;
+  max-height: calc(100vh - 32px);
+  overflow-y: auto;
+  padding: 20px;
+  border: 1px solid var(--mm-line-2);
+  border-radius: 14px;
+  background: var(--mm-surface);
+  box-shadow: var(--mm-shadow-2);
+}
+
+.dialogTitle {
+  margin: 0 0 12px;
+  font-size: 15px;
+  line-height: 22px;
+  font-weight: 600;
+  color: var(--mm-fg);
+}
+
+.dialogBody {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  min-width: 0;
+}
+
+.dialogMeta {
+  display: flex;
+  flex-direction: column;
+  padding: 2px 12px;
+  border: 1px solid var(--mm-line-1);
+  border-radius: 10px;
+  background: var(--mm-surface-2);
+}
+
+.dialogMetaRow {
+  display: flex;
+  align-items: baseline;
+  gap: 12px;
+  padding: 6px 0;
+  border-top: 1px solid var(--mm-line-1);
+}
+
+.dialogMetaRow:first-child {
+  border-top: 0;
+}
+
+.dialogMetaLabel {
+  flex: 0 0 56px;
+  font-size: 11.5px;
+  line-height: 18px;
+  color: var(--mm-fg-3);
+}
+
+.dialogMetaValue {
+  flex: 1;
+  min-width: 0;
+  font-size: 12px;
+  line-height: 18px;
+  font-weight: 500;
+  color: var(--mm-fg);
+  overflow-wrap: anywhere;
+}
+
+.dialogNote {
+  margin: 0;
+  font-size: 11.5px;
+  line-height: 18px;
+  color: var(--mm-fg-3);
+}
+
+.dialogActions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+  margin: 16px 0 0;
+}
+
+/* Model service section: the platform owns the credential, so the form is one
+ * labelled field plus its save action, and the readonly state says so in
+ * place rather than hiding the control. */
+.form {
+  display: flex;
+  align-items: flex-end;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin: 14px 0 0;
+}
+
+.label {
+  display: flex;
+  flex: 1 1 240px;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+  font-size: 12px;
+  line-height: 18px;
+  color: var(--mm-fg-2);
+}
+
+.footnote {
+  margin: 8px 0 0;
+  font-size: 12px;
+  line-height: 19px;
+  color: var(--mm-fg-2);
+}
+
+.locked {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 8px 0 0;
+  padding-left: 9px;
+  border-left: 2px solid var(--mm-line-2);
+  font-size: 11.5px;
+  line-height: 18px;
+  color: var(--mm-fg-3);
+}
+
+.root a {
+  color: var(--dsw-alias-link, #4f6ef7);
+  text-decoration: none;
+}
+
+.root a:hover {
+  text-decoration: underline;
+}
+
+.root input,
+.root select {
+  width: 100%;
+  min-width: 0;
+  padding: 7px 10px;
+  border: 1px solid var(--mm-line-2);
+  border-radius: 8px;
+  background: var(--mm-surface);
+  color: var(--mm-fg);
+  font: inherit;
+  font-size: 12px;
+  line-height: 18px;
+  transition: border-color var(--mm-ease), box-shadow var(--mm-ease);
+}
+
+/* The native option list is painted by the OS, so it needs both colors. */
+.root option {
+  color: var(--mm-fg);
+  background: var(--mm-surface);
+}
+
+.root input:focus,
+.root select:focus {
+  border-color: var(--mm-info);
+  box-shadow: 0 0 0 3px var(--mm-info-soft);
+}
+
+.root input:disabled,
+.root select:disabled {
+  opacity: .6;
+  cursor: not-allowed;
+  background: var(--mm-surface-2);
+}
+
+/* Keyboard focus stays visible on every control this component draws, and a
+ * disabled control never looks pressable. */
+.root button:focus-visible,
+.root a:focus-visible,
+.root input:focus-visible,
+.root select:focus-visible,
+.overlay button:focus-visible,
+.overlay a:focus-visible {
+  outline: 2px solid var(--mm-brand);
+  outline-offset: 2px;
+}
+
+.root button:disabled,
+.overlay button:disabled {
+  opacity: .5;
+  cursor: not-allowed;
+}
+
+/* Fallbacks only: the host resolves these tokens per theme, so this block
+ * matters solely for a host that ships none of them. */
+@media (prefers-color-scheme: dark) {
+  .root,
+  .overlay {
+    --mm-surface: var(--dsw-alias-bg-layer-1, #1b2027);
+    --mm-surface-2: var(--dsw-alias-bg-layer-2, #232830);
+    --mm-line-1: var(--dsw-alias-border-l1, rgba(255, 255, 255, .07));
+    --mm-line-2: var(--dsw-alias-border-l2, rgba(255, 255, 255, .14));
+    --mm-line-3: var(--dsw-alias-border-l3, rgba(255, 255, 255, .2));
+    --mm-fg: var(--dsw-alias-label-primary, #e9ebef);
+    --mm-fg-2: var(--dsw-alias-label-secondary, #a8b0bd);
+    --mm-fg-3: var(--dsw-alias-label-tertiary, #8b93a1);
+    --mm-brand: var(--dsw-alias-brand-primary, #e9ebef);
+    --mm-brand-hover: var(--dsw-alias-button-primary-hover, #ffffff);
+    --mm-on-brand: var(--dsw-alias-label-primary-foreground, #14171d);
+    --mm-hover: var(--dsw-alias-interactive-bg-hover, rgba(255, 255, 255, .08));
+    --mm-info: var(--dsw-alias-state-business-primary, #679efe);
+    --mm-info-soft: var(--dsw-alias-state-business-tertiary, rgba(103, 158, 254, .16));
+    --mm-success: var(--dsw-alias-state-success-primary, #4ade80);
+    --mm-success-soft: var(--dsw-alias-state-success-tertiary, rgba(74, 222, 128, .16));
+    --mm-warn: var(--dsw-alias-state-warn-primary, #fbbf24);
+    --mm-warn-soft: var(--dsw-alias-state-warn-tertiary, rgba(251, 191, 36, .16));
+    --mm-danger: var(--dsw-alias-state-error-primary, #f26a6a);
+    --mm-danger-soft: var(--dsw-alias-interactive-bg-hover-danger, rgba(242, 90, 90, .16));
+    --mm-mask: var(--dsw-alias-bg-mask-3, rgba(0, 0, 0, .6));
+    --mm-shadow-1: var(--dsw-shadow-lv1, 0 2px 6px rgba(0, 0, 0, .4));
+    --mm-shadow-2: var(--dsw-shadow-lv2, 0 12px 32px rgba(0, 0, 0, .5));
+  }
+}
+
+/* Nothing here animates for its own sake, so reduced motion only has to drop
+ * the transitions and the hover lift. */
+@media (prefers-reduced-motion: reduce) {
+  .card,
+  .actionPrimary,
+  .actionGhost,
+  .dialogPrimary,
+  .dialogGhost,
+  .dialogDanger,
+  .stepDot,
+  .progressFill,
+  .root input,
+  .root select {
+    transition: none;
+  }
+
+  .card:hover {
+    transform: none;
+  }
+}
+
+/* Phone width: one card per row, buttons full width, and the dialog fills the
+ * viewport minus its margin so the meta table stays readable. */
+@media (max-width: 560px) {
+  .header {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .headerActions > button {
+    width: 100%;
+  }
+
+  /* 手机宽度：单列 + 卡片纵向排布，动作按钮独占一行。 */
+  .columns {
+    flex-direction: column;
+  }
+
+  .card {
+    flex-wrap: wrap;
+  }
+
+  .cardActions {
+    width: 100%;
+    justify-content: flex-end;
+  }
+
+  .cardActions > button,
+  .form > button,
+  .dialogActions > button {
+    width: 100%;
+  }
+
+  .dialogActions {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .progressSteps {
+    flex-direction: column;
+    gap: 6px;
+  }
+
+  .overlay {
+    padding: 12px;
+  }
+
+  .dialog {
+    max-width: none;
+    max-height: calc(100vh - 24px);
+  }
+}
+
+/* ── 模型能力清单（收不收图片）───────────────────────────────────────────
+   这里不能用 .form：那个类是 flex-end 的横向行，会把勾选项压成一条条竖排。
+   卡片式分组 + 一行一个模型，行内只放「勾选框 · 模型名 · 当前状态」。 */
+.visionGroup {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin: 16px 0 0;
+  padding: 12px 14px;
+  border: 1px solid var(--mm-line-1);
+  border-radius: 10px;
+  background: var(--mm-surface-2);
+}
+
+.visionLegend {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  padding: 0 4px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--mm-fg-2);
+}
+
+.visionCount {
+  font-weight: 400;
+  color: var(--mm-fg-3);
+}
+
+.visionHint {
+  margin: 0;
+  font-size: 12px;
+  line-height: 18px;
+  color: var(--mm-fg-3);
+}
+
+.visionRows {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.visionRow {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 6px 8px;
+  border-radius: 8px;
+  font-size: 13px;
+  line-height: 20px;
+  color: var(--mm-fg);
+}
+
+.visionRow:hover {
+  background: var(--mm-hover);
+}
+
+/* 勾选区：模型名 + 图片能力状态。点击整行即切换勾选（上下文输入框除外）。 */
+.visionCheck {
+  display: flex;
+  flex: 1 1 auto;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  cursor: pointer;
+}
+
+.visionRow input[type="checkbox"] {
+  width: 15px;
+  height: 15px;
+  margin: 0;
+  accent-color: var(--mm-brand);
+  cursor: pointer;
+}
+
+/* 上下文容量：输入框只放「用户自己填的那份声明」，占位符显示当前生效值。 */
+.contextField {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  color: var(--mm-fg-3);
+}
+
+.contextLabel {
+  white-space: nowrap;
+}
+
+.contextInput {
+  width: 104px;
+  padding: 4px 8px;
+  border: 1px solid var(--mm-line-1);
+  border-radius: 6px;
+  background: var(--mm-surface-1);
+  color: var(--mm-fg);
+  font: inherit;
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+}
+
+.contextInput:disabled {
+  opacity: 0.6;
+}
+
+.contextUnit {
+  white-space: nowrap;
+}
+
+.visionName {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.visionState {
+  flex: 0 0 auto;
+  font-size: 12px;
+  color: var(--mm-fg-3);
+}
+
+.visionActions {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: 2px;
+}
+
+.visionActions button {
+  min-width: 132px;
+}
+
+@media (max-width: 720px) {
+  .visionRow {
+    flex-wrap: wrap;
+  }
+
+  .visionActions button {
+    width: 100%;
+  }
+}

@@ -23,7 +23,7 @@ npm run build
 npm test -- --maxWorkers=4
 ```
 
-构建产物 `lib/` 会被 `lawyer-harness` 的 `setup-product.mjs` 与 `dsh-desktop` 的 `vendor/lawyer-product/market.tgz` 消费。
+构建产物 `lib/` 会被 `lawyer-harness` 的 `setup-product.mjs` 与 `dsh-desktop` 的 `vendor/lawyerDesk/market.tgz` 消费。
 
 ## 这个插件必须守住的语义
 
@@ -37,7 +37,7 @@ npm test -- --maxWorkers=4
 
 | 仓库 | 关系 |
 |---|---|
-| `../lawyer-harness/` | 打包本插件进产品（`vendor/lawyer-product/market.tgz`），并决定开放清单内容 |
+| `../lawyer-harness/` | 打包本插件进产品（`vendor/lawyerDesk/market.tgz`），并决定开放清单内容 |
 | `../deepseek-harness/` | 宿主内核；本插件作为 bundle 装进产品 profile，依赖其 slots / 服务接口 |
 | `../dsh-desktop/` | 桌面形态内置同一份插件 |
 | `../new-api/` | 模型站点的「插件目录」管理页负责维护开放清单（页面 → 导出 → 发布） |

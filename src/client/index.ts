@@ -1,3 +1,4 @@
+import { ManagedMarketSection, ManagedModelsSection, managedZh, managedEn, type ManagedTranslate } from './ManagedMarket.tsx'
 /**
  * dsh-market client: registers a "Market" settings section rendering the
  * plugin market UI, plus the post-install toast in the shell overlay layer.
@@ -78,92 +79,14 @@ interface MarketClientContext {
   theme: ThemeService
 }
 
-export const name = 'dsh-market'
-// 'theme' is safe to require: ui-layout (mandatory in every web composition)
-// already hard-depends on it. This cordis's object-form inject means
-// intercept config, NOT {required,optional} — do not use it here.
+export const name = 'lawyer-market'
 export const inject = ['slots', 'locale', 'theme']
 export function apply(ctx: MarketClientContext): void {
-  // Older hosts resolve the primitives module but lack the rc.6 exports the
-  // market renders with. Skip registration (market simply absent from the
-  // settings list) rather than throwing mid-render and blanking the dialog.
-  const gaps = missingPrimitives(primitives as unknown as Record<string, unknown>)
-  if (gaps.length > 0) {
-    console.warn('[dsh-market] host ui-primitives missing ' + gaps.join(', ') + ' — market section disabled (dsh web >= 0.1.0-rc.6 required)')
-    return
-  }
-
-  ctx.effect(() => ctx.locale.register(NS, { zh, en }), 'dsh-market: dictionaries')
-  const t = ctx.locale.bind(NS)
-
-  // Kept so the removal flow can retire the market's own nav entry the
-  // moment the package is gone: leaving "插件市场" in the left menu after
-  // the user removed it is the card claiming something the profile no
-  // longer agrees with. `register` hands back its own disposer; calling it
-  // twice (here and again when the context unwinds) is harmless, but the
-  // reference is dropped after use so the intent stays readable.
-  let retireSection: (() => void) | null = null
-
+  ctx.effect(() => ctx.locale.register('lawyer-market', { zh: managedZh, en: managedEn }), 'lawyer-market: locale')
+  const t = ctx.locale.bind('lawyer-market') as ManagedTranslate
   ctx.slots.inject('settings.section', () => {
-    const off = ctx.slots.register({
-      name: 'settings.section',
-      id: 'market',
-      order: 40,
-      label: () => t('nav'),
-      locale: NS,
-      inject: () => ({ t }),
-    }, (ownerProps: { preferredSubsectionId?: string } = {}) => h(MarketErrorBoundary, {
-      // Wrapped at the registration point, so the boundary is OUTSIDE
-      // everything the section renders — including its portalled layers.
-      // A crash inside used to unmount the whole tree and leave an empty
-      // settings panel with no export-log button, which is how #293 went
-      // months without a usable report (#513 fixed that trigger; this
-      // covers the next one).
-      text: {
-        title: t('crashTitle'),
-        hint: t('crashHint'),
-        reload: t('crashReload'),
-        details: t('crashDetails'),
-      },
-      actions: h('button', {
-        type: 'button',
-        onClick: () => { void exportMarketLog().catch(() => {}) },
-      }, t('exportLog')),
-    }, h(MarketSection, {
-      t,
-      locale: ctx.locale,
-      theme: ctx.theme,
-      themeStore: {
-        subscribe: (cb: () => void) => ctx.on('theme/change', cb),
-        getSnapshot: () => ctx.theme.getTheme(),
-      },
-      preferredSubsectionId: ownerProps.preferredSubsectionId,
-    })))
-    if (typeof off === 'function') retireSection = off as () => void
-    return off
+    const a = ctx.slots.register({ name: 'settings.section', id: 'models', order: 30, label: () => t('models'), locale: 'lawyer-market', inject: () => ({ t }) }, () => h(ManagedModelsSection, { t }))
+    const b = ctx.slots.register({ name: 'settings.section', id: 'lawyer-market', order: 40, label: () => t('market'), locale: 'lawyer-market', inject: () => ({ t }) }, () => h(ManagedMarketSection, { t }))
+    return () => { if (typeof a === 'function') a(); if (typeof b === 'function') b() }
   })
-
-  // The settings card (dsh >= 0.1.0-rc.7). Registered through a NESTED
-  // inject on purpose: naming settingsScope in the module-level `inject`
-  // would keep this whole plugin unmounted on any host without that
-  // service — the market's own page would vanish on rc.6 to gain a card
-  // rc.6 cannot render. Nested, the card simply never appears there.
-  const settingsCtx = ctx as unknown as {
-    inject(services: string[], callback: (scoped: SettingsScopeHost) => void): void
-  }
-  settingsCtx.inject(['settingsScope'], (scoped) => {
-    scoped.slots.inject('settings.plugin.item', () => scoped.slots.register({
-      name: 'settings.plugin.item',
-      key: NS,
-      locale: NS,
-      inject: () => ({ t }),
-    }, () => h(SettingsCard, { t, onRemoved: () => { const off = retireSection; retireSection = null; off?.() } })))
-  })
-
-  const Toast = () => h(InstallToast, { t })
-  ctx.slots.inject('shell.overlay', () => ctx.slots.register({
-    name: 'shell.overlay',
-    id: 'dsh-market-toast',
-    label: () => 'dsh-market',
-  }, Toast))
 }
