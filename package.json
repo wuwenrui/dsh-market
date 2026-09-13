@@ -1,7 +1,7 @@
 {
   "name": "@lawyer-dsh/market",
   "description": "内置律师能力市场：平台许可目录、签名制品与受控安装",
-  "version": "1.45.0-lawyer.1",
+  "version": "1.46.1-lawyer.1",
   "type": "module",
   "main": "lib/index.js",
   "types": "lib/types/index.d.ts",
@@ -51,6 +51,10 @@
       "patch": "./cordis.patch.yml"
     },
     "client": {
+      "inject": [
+        "@deepseek-ai/dsh-client-locale",
+        "@deepseek-ai/dsh-client-ui-settings"
+      ],
       "platform": "web"
     }
   },

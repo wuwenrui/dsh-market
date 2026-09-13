@@ -202,6 +202,52 @@ describe('holdsNativeAddon (#441)', () => {
 })
 
 describe('readInstalledRepoEvidence (#141)', () => {
+  it('reads the repository of an ordinary npm install, which is the only tie-breaker between same-named entries (#544)', () => {
+    // @QinYupan: dsh-mermaid installed from npm, two same-named catalog
+    // entries, and the Discover card still said Install. The manifest's
+    // repository declaration names which of the two is on disk, and it sits
+    // in node_modules/<pkg>/package.json for an npm install exactly as it
+    // does for a local one — this used to return empty for any spec that
+    // was not link:/file:, so the client found two name candidates and
+    // matched neither.
+    const dir = writeProfile({ dependencies: { 'dsh-mermaid': '^0.4.0' } })
+    const installedDir = join(dir, 'node_modules', 'dsh-mermaid')
+    mkdirSync(installedDir, { recursive: true })
+    writeFileSync(join(installedDir, 'package.json'), JSON.stringify({
+      name: 'dsh-mermaid',
+      version: '0.4.0',
+      repository: { type: 'git', url: 'git+https://github.com/MrmoLabs/dsh-mermaid.git' },
+    }))
+
+    expect(readInstalledRepoEvidence('web', 'dsh-mermaid', '^0.4.0'))
+      .toEqual({ identities: ['mrmolabs/dsh-mermaid'], hints: [] })
+  })
+
+  it('does NOT read the manifest for a spec that already names its source (#544/#548)', () => {
+    // A fork installed as github:myfork/plugin almost always still declares
+    // the UPSTREAM repository, because nobody edits that field when forking.
+    // Trusting it would add the upstream as an identity and mark the
+    // upstream's Discover card as installed — a weaker signal outvoting a
+    // definite one, which is #485's mistake. The first version of the #544
+    // fix widened to every spec kind and had exactly that hole.
+    const dir = writeProfile({ dependencies: { 'dsh-plug': 'github:myfork/dsh-plug' } })
+    const installedDir = join(dir, 'node_modules', 'dsh-plug')
+    mkdirSync(installedDir, { recursive: true })
+    writeFileSync(join(installedDir, 'package.json'), JSON.stringify({
+      name: 'dsh-plug',
+      repository: { type: 'git', url: 'git+https://github.com/upstream/dsh-plug.git' },
+    }))
+
+    expect(readInstalledRepoEvidence('web', 'dsh-plug', 'github:myfork/dsh-plug'))
+      .toEqual({ identities: [], hints: [] })
+    // Same for a Release archive and a raw git+https spec: each states its
+    // own source already.
+    expect(readInstalledRepoEvidence('web', 'dsh-plug', 'https://github.com/myfork/dsh-plug/releases/download/v1/p.tgz'))
+      .toEqual({ identities: [], hints: [] })
+    expect(readInstalledRepoEvidence('web', 'dsh-plug', 'git+https://gitea.example/me/dsh-plug.git'))
+      .toEqual({ identities: [], hints: [] })
+  })
+
   it('reads package.json repository metadata, including monorepo directories', () => {
     const target = mkdtempSync(join(tmpdir(), 'dshm-link-'))
     try {
