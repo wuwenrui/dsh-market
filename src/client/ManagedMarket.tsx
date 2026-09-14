@@ -8,6 +8,7 @@ import styles from './ManagedMarket.module.css'
 
 import type { ManagedTranslate } from './managed-locales.ts'
 export { managedZh, managedEn, type ManagedTranslate } from './managed-locales.ts'
+
 interface Status { busy: boolean; stage: string; restartRequired: boolean }
 interface Installed { id: string; packageName: string; version: string }
 interface Catalog { revision: number; plugins: Array<Omit<ManagedRelease, 'artifact' | 'install'> & { compatible: boolean }> }
@@ -79,12 +80,12 @@ export async function waitForWorkbenchRestart(options: {
   return 'timeout'
 }
 
-/** The step rail + bar shown while an operation runs. */
-function OperationProgress({ t, stage }: { t: ManagedTranslate; stage: string }) {
+/** The step rail + bar shown while an operation runs, on the card it belongs to. */
+function OperationProgress({ t, stage, variant = 'panel' }: { t: ManagedTranslate; stage: string; variant?: 'panel' | 'card' }) {
   const current = stageIndex(stage)
   const total = STAGES.length
   const label = (index: number) => t(STAGE_LABEL[STAGES[index] ?? 'preparing'])
-  return <div className={styles.progress} role="status" aria-live="polite">
+  return <div className={`${styles.progress}${variant === 'card' ? ` ${styles.progressCard}` : ''}`} role="status" aria-live="polite">
     <div className={styles.progressHead}><span className={styles.progressTitle}>{t('progress')}</span><span className={styles.progressCount}>{`${t('progressOf')} ${Math.min(current + 1, total)}/${total}`}</span></div>
     <ol className={styles.progressSteps}>
       {STAGES.map((_, index) => <li key={index} className={`${styles.step} ${index === current ? styles.stepOn : ''} ${index < current ? styles.stepDone : ''}`}>
@@ -181,13 +182,16 @@ function CardColumns({ count, children }: { count: number; children: ReactNode }
  * One capability card: category mark, name, meta line, clamped description,
  * and the action pinned to the top-right — the same reading order as the
  * market's own cards, so the two surfaces do not feel like different products.
+ * An in-flight operation for this capability renders inside the card's body,
+ * so the progress always sits on the row the user actually clicked.
  */
-function CapabilityCard({ category, name, meta, description, badges, action }: {
+function CapabilityCard({ category, name, meta, description, badges, progress, action }: {
   category: string
   name: string
   meta: string
   description: string
   badges: ReactNode
+  progress?: ReactNode
   action: ReactNode
 }) {
   const mark = category.trim() === '' ? name.trim().slice(0, 1) : category.trim().slice(0, 1)
@@ -200,6 +204,7 @@ function CapabilityCard({ category, name, meta, description, badges, action }: {
       </div>
       <p className={styles.meta}>{meta}</p>
       {description === '' ? null : <p className={styles.description}>{description}</p>}
+      {progress}
     </div>
     <div className={styles.cardActions}>{action}</div>
   </article>
@@ -211,6 +216,9 @@ export function ManagedMarketSection({ t }: { t: ManagedTranslate }) {
   const [error, setError] = useState(''), [operationError, setOperationError] = useState(''), [busy, setBusy] = useState(false)
   const [refreshing, setRefreshing] = useState(false)
   const [pending, setPending] = useState<PendingOperation | null>(null)
+  /** 正在执行的操作属于哪个能力：进度就画在那张卡片上，而不是页面顶部的一块。
+   *  「重启后生效」不是继续安装的前置条件，所以这个状态只表示「当前这一个操作」。 */
+  const [running, setRunning] = useState<{ id: string; path: PendingOperation['path'] } | null>(null)
   const [restartPhase, setRestartPhase] = useState<'idle' | 'restarting' | 'done' | 'timeout' | 'unavailable'>('idle')
   const [tab, setTab] = useState<'installed' | 'available'>('installed')
   /** 只在首次加载时定默认页：什么都没装的人该直接看到可装的东西，
@@ -241,13 +249,13 @@ export function ManagedMarketSection({ t }: { t: ManagedTranslate }) {
   const run = async () => {
     const operation = pending
     if (operation === null) return
-    setPending(null); setBusy(true); setOperationError('')
+    setPending(null); setBusy(true); setRunning({ id: operation.id, path: operation.path }); setOperationError('')
     try {
       await request(operation.path, { id: operation.id, version: operation.version })
       await load()
       // 安装/更新完成后留下「重启生效」的提示；卸载不需要重启
       if (operation.path !== 'uninstall') sessionStorage.setItem('dshm-managed-pending-restart', '1')
-    } catch (e) { setOperationError(e instanceof Error ? e.message : String(e)) } finally { setBusy(false) }
+    } catch (e) { setOperationError(e instanceof Error ? e.message : String(e)) } finally { setBusy(false); setRunning(null) }
   }
   const startRestart = async () => {
     if (restartingRef.current) return
@@ -283,13 +291,21 @@ export function ManagedMarketSection({ t }: { t: ManagedTranslate }) {
     version: item.version, description: '', category: '', source: 'owned', from: item.version,
   })
 
-  const locked = busy || status.restartRequired
+  // 只锁「正在跑的那一次操作」：重启提示还在时，用户可以直接接着装下一个能力，
+  // 重启只是让所有已装能力一起生效。
+  const locked = busy
   const keyword = query.trim().toLowerCase()
   const match = (fields: Array<string | undefined>) => keyword === '' || fields.some(field => String(field ?? '').toLowerCase().includes(keyword))
   const installedRows = installed
     .filter(item => match([item.id, catalog?.plugins.find(p => p.id === item.id)?.name, catalog?.plugins.find(p => p.id === item.id)?.category, catalog?.plugins.find(p => p.id === item.id)?.description]))
   const availableRows = (catalog?.plugins ?? []).filter(item => match([item.id, item.name, item.category, item.description]))
   const updatableCount = installed.filter(item => catalog?.plugins.find(p => p.id === item.id)?.version !== undefined && catalog.plugins.find(p => p.id === item.id)?.version !== item.version).length
+  /** 正在执行的能力，画在它自己的卡片里；进度不跟着页面顶部跑。 */
+  const progressFor = (id: string) => running !== null && running.id === id
+    ? <OperationProgress t={t} stage={status.stage} variant="card" />
+    : null
+  /** 操作期间切到另一个 tab（或搜索词把它筛掉）时卡片不在屏幕上，回落到列表上方显示一次。 */
+  const runningVisible = running === null || (tab === 'installed' ? installedRows : availableRows).some(item => item.id === running.id)
   return <section className={styles.root} aria-label={t('market')} ref={layout.ref}>
     <header className={styles.header}>
       <div>
@@ -303,7 +319,7 @@ export function ManagedMarketSection({ t }: { t: ManagedTranslate }) {
 
     {toast === '' ? null : <div className={styles.alert} data-kind="success" role="status"><p className={styles.alertBody}>{toast}</p></div>}
     {status.restartRequired ? <RestartBanner t={t} phase={restartPhase} onRestart={() => void startRestart()} /> : null}
-    {busy ? <OperationProgress t={t} stage={status.stage} /> : null}
+    {running !== null && !runningVisible ? <OperationProgress t={t} stage={status.stage} /> : null}
     {operationError === '' ? null : <div className={styles.alert} data-kind="danger" role="alert"><p className={styles.alertBody}>{operationError}</p></div>}
 
     {/* 已安装 / 可安装用 tab 分开：装完的东西留在「可安装」里会让人以为没装上，
@@ -341,10 +357,11 @@ export function ManagedMarketSection({ t }: { t: ManagedTranslate }) {
                 <span className={styles.badge} data-kind="installed">{t('stateInstalled')}</span>
                 {updatable ? <span className={styles.badge} data-kind="update">{t('stateUpdatable')}</span> : null}
               </>}
-              action={<>
+              progress={progressFor(item.id)}
+              action={progressFor(item.id) === null ? <>
                 <button type="button" className={styles.actionGhost} onClick={() => askUninstall(item)} disabled={busy}>{t('remove')}</button>
                 {updatable ? <button type="button" className={styles.actionPrimary} onClick={() => askInstall(known, item)} disabled={locked}>{t('update')}</button> : null}
-              </>}
+              </> : null}
             />
           })}</CardColumns>}
     </section> : <section className={styles.section} aria-label={t('available')}>
@@ -369,7 +386,8 @@ export function ManagedMarketSection({ t }: { t: ManagedTranslate }) {
             <span className={styles.badge} data-kind={item.source === 'community' ? 'community' : 'owned'}>{t(item.source === 'community' ? 'community' : 'owned')}</span>
             {same ? <span className={styles.badge} data-kind="installed">{t('stateInstalled')}</span> : null}
           </>}
-          action={<button type="button" className={same || !item.compatible ? styles.actionGhost : styles.actionPrimary}
+          progress={progressFor(item.id)}
+          action={progressFor(item.id) !== null ? null : <button type="button" className={same || !item.compatible ? styles.actionGhost : styles.actionPrimary}
             onClick={() => askInstall(item, current)}
             disabled={locked || same || !item.compatible}>
             {!item.compatible ? t('incompatible') : same ? t('stateInstalled') : current === undefined ? t('install') : t('update')}

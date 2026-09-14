@@ -20,7 +20,7 @@ const zh: Record<string, string> = {
   dialogMetaName: '能力', dialogMetaVersion: '版本', dialogMetaCategory: '分类', dialogMetaSource: '来源', dialogMetaState: '当前状态',
   stateNotInstalled: '未安装', stateInstalled: '已安装', stateUpdatable: '可更新',
   stageChecking: '校验环境', stageAuthorizing: '核验授权', stagePreparing: '安装到隔离环境',
-  progress: '正在校验…', progressOf: '步骤', progressWait: '同一时间只允许一个安装操作。',
+  progress: '正在校验…', progressOf: '步骤', progressWait: '同一时间只处理一个安装操作；完成后可以继续安装其他能力，重启后一并生效。',
   restartTitle: '安装已完成，重启后生效', restartBody: '需要重启。', restartNow: '立即重启', restarting: '正在重启…',
   restartWaiting: '正在重启，请稍候…', restartDone: '已重启。', restartTimeout: '等待重启超时。',
   restartUnavailable: '当前形态不支持一键重启。', pending: '等待重启', uninstallAvailableHint: '重启前仍可卸载。',

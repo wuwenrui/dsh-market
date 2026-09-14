@@ -144,7 +144,11 @@ export class ManagedMarket {
     })
   }
   private async mutate<T>(run: () => Promise<T>): Promise<T> {
-    if (this.active || this.pendingRestart || this.options.agentsBusy()) throw new ManagedError('BUSY', '请先完成当前任务，或重启以应用上次变更', 409)
+    // 「重启后生效」不是继续安装的前置条件：环境切换已经把所有待生效的
+    // 插件写进当前 profile，后续安装仍从磁盘上的现行 profile 出发，重新走
+    // 隔离安装 + 真实启动检查，所以可以在重启前连续安装/卸载多个能力。
+    // 仍然只允许一个操作同时进行（进程内 active + 磁盘锁），并继续拦住正在办案的会话。
+    if (this.active || this.options.agentsBusy()) throw new ManagedError('BUSY', '请先完成当前任务，或等待当前安装结束', 409)
     const release = this.options.beginMutation?.()
     this.active = true
     const lock = join(this.root, 'operation.lock')

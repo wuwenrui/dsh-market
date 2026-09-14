@@ -566,9 +566,10 @@
   color: var(--mm-danger);
 }
 
-/* Install progress: the four host stages as a dot rail plus the bar the user
- * actually watches. Only one operation runs at a time, so the rail is the
- * whole state of the plugin environment. */
+/* Install progress: the host stages as a dot rail plus the bar the user
+ * actually watches. It renders inside the card of the capability being
+ * changed; the panel variant is only the fallback for the moment the running
+ * card is off-screen (another tab, or filtered out by a search). */
 .progress {
   display: flex;
   flex-direction: column;
@@ -578,6 +579,15 @@
   border: 1px solid var(--mm-line-2);
   border-radius: 12px;
   background: var(--mm-surface-2);
+}
+
+/* In-card variant: a lighter block that belongs to the card body, not a
+   separate panel butting against it. */
+.progressCard {
+  gap: 8px;
+  margin: 6px 0 0;
+  padding: 10px 12px;
+  border-radius: 10px;
 }
 
 .progressHead {
