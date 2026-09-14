@@ -36,7 +36,7 @@ import { applyBundleOrder, mergeOrder, readBundleRules, readBundleStack, validat
 import { applyPreset, deletePreset, listPresets, previewPreset, savePreset } from './presets.ts'
 import { createProfileSnapshot, DEFAULT_MAX_SNAPSHOTS, deleteSnapshot, listSnapshots, restoreSnapshot } from './snapshot.ts'
 import { trialValidate } from './trial.ts'
-import { codeloadAllowBuildsKey, findCatalogEntryForLocal, findInstalledAlias, githubCommitOfTarget, githubTargetAtCommit, gitAllowBuildsKey, gitUpdateTarget, installTargetFor, isLocalSpec, NPM_NAME_RE, repoOfTarget, restoreBlockedByWorkspace, restoreTargetForLocal, workspaceProtocolDeps } from './sources.ts'
+import { codeloadAllowBuildsKey, findCatalogEntryForLocal, findInstalledAlias, githubCommitOfTarget, githubTargetAtCommit, gitAllowBuildsKey, gitUpdateTarget, installTargetFor, isGenerationLink, isLocalSpec, NPM_NAME_RE, repoOfTarget, restoreBlockedByWorkspace, restoreTargetForLocal, workspaceProtocolDeps } from './sources.ts'
 import { failureDetail, groupConflictsByOwner, isStaleUpdate, parseIgnoredBuilds, parsePrepareNotAllowed, pnpmNeverStarted, RELEASE_AGE_OVERRIDE, retargetCollections, validateAddedPlugins, withHoistRecovery } from './install.ts'
 import { asChannel, CHANNELS, DIST_TAG, resolveChannel, type Channel } from './channels.ts'
 import {
@@ -487,14 +487,31 @@ export function mountMarketRoutes(
   }
 
   /**
-   * Apply one enable/disable request: persist the choice in state.json, then
-   * drive the live composition. Covers every mount form — hot mounts and
-   * client-only shims go through hotUnmount/hotMount, bundle-layer entries
-   * through setEntryDisabled. Enabling a THEME goes through the caller's
-   * activateTheme instead so the Themes tab's exclusivity stays intact.
+   * Apply one enable/disable request: drive the live composition, then
+   * persist the choice in state.json. Covers every mount form — hot mounts
+   * and client-only shims go through hotUnmount/hotMount, bundle-layer
+   * entries through setEntryDisabled. Enabling a THEME goes through the
+   * caller's activateTheme instead so the Themes tab's exclusivity stays
+   * intact.
+   *
+   * A FAILED ENABLE LEAVES EVERYTHING AS IT WAS (#575). The choice used to be
+   * recorded before the mount was attempted and persisted whatever happened,
+   * so enabling a plugin that crashes on import — deterministically, every
+   * time — wrote "enabled" into state.json anyway. The next boot tried the
+   * import again and died again; the reporter measured 24 restarts before
+   * restoring the disable by hand. The toggle route's patch-layer gate
+   * (@JINITAIMEI121 in #584) closed the same hole in cordis.patch.yml; this
+   * closes it in the market's own store, which is the ONLY durable state a
+   * client-only plugin has — that plugin kind has no bundle rows, so the
+   * patch gate never runs for it.
+   *
+   * A failed DISABLE still persists, and that asymmetry is deliberate: the
+   * user asked for OFF, and a failed unmount leaves the plugin live only for
+   * this session. There the durable disable is the contract, not an error.
    */
   async function setPluginEnabled(name: string, enabled: boolean): Promise<{ ok: boolean; reason?: string }> {
     const dir = activeProfileDir
+    const wasDisabled = disabled.has(name)
     if (enabled) disabled.delete(name)
     else disabled.add(name)
     let ok: boolean
@@ -521,6 +538,13 @@ export function mountMarketRoutes(
         // entry, or already off): the persisted flag is the contract.
         ok = true
       }
+    }
+    if (!ok && enabled) {
+      // Put the in-memory view back before persisting: it is the same object
+      // the route reports as `disabled`, so restoring it keeps the reply, the
+      // store and the patch layer telling one story.
+      if (wasDisabled) disabled.add(name)
+      logEvent('warn', 'toggle', `${name}: enable failed; leaving it disabled rather than persisting a state that crashes at boot (#575)`)
     }
     writeMarketState(dir, { disabled, groups, groupOrder })
     return { ok, reason }
@@ -1156,6 +1180,24 @@ export function mountMarketRoutes(
     try { return new URL(request.url ?? '', 'http://localhost').searchParams.get('force') === '1' } catch { return false }
   }
 
+  /**
+   * The npm package an install with no registry spec of its own is compared
+   * against: a `file:` package matched to the catalog (#429), or a
+   * generation the desktop host linked in (#497). Null for everything else
+   * — a developer's own `link:` checkout is never compared online.
+   */
+  const onlineSourceOf = (
+    plugins: Awaited<ReturnType<typeof loadRegistry>>['plugins'],
+    name: string,
+    spec: string,
+  ): string | null => {
+    if (!spec.toLowerCase().startsWith('file:') && !isGenerationLink(spec)) return null
+    const evidence = readInstalledRepoEvidence(config.profile, name, spec, activeProfileDir)
+    const entry = findCatalogEntryForLocal(plugins, name, evidence.identities, evidence.hints)
+    const target = entry === null ? null : restoreTargetForLocal(entry, evidence.identities)
+    return target !== null && NPM_NAME_RE.test(target) ? target : null
+  }
+
   const disposers = [
     host.webServer.register({
       kind: 'exact',
@@ -1218,7 +1260,20 @@ export function mountMarketRoutes(
             const force = forceCheckFrom(request)
             const channel = activeChannel()
             const channelFor = SELF_NAMES.has(name) ? new Map([[name, channel]]) : undefined
-            const update = (await checkUpdates(config.profile, force, activeProfileDir, channelFor))[name]
+            // The same source lookup the market page makes, so a generation
+            // (#497) or a catalog-matched local package answers here with the
+            // release it can be compared against rather than with nothing.
+            const spec = readInstalled(config.profile, activeProfileDir)[name]
+            const onlineSourceFor = new Map<string, string>()
+            if (spec !== undefined && (spec.toLowerCase().startsWith('file:') || isGenerationLink(spec))) {
+              try {
+                const source = onlineSourceOf((await loadRegistry()).plugins, name, spec)
+                if (source !== null) onlineSourceFor.set(name, source)
+              } catch (error) {
+                logEvent('warn', 'updates', `package source lookup failed — ${error instanceof Error ? error.message : String(error)}`)
+              }
+            }
+            const update = (await checkUpdates(config.profile, force, activeProfileDir, channelFor, onlineSourceFor))[name]
             if (update === undefined) {
               sendJson(response, 404, { schema: UPDATE_API_V1_SCHEMA, error: 'plugin is not installed' })
               return
@@ -2078,7 +2133,18 @@ export function mountMarketRoutes(
             }
           }
           let patchWrite: { ok: boolean; reason: string | null } | null = null
-          if (patchRows.length > 0) {
+          // #575: a failed ENABLE must not flip the durable patch layer.
+          // The hot-mount failure may be deterministic (a plugin that
+          // crashes on import), and persisting "enabled" turns a transient
+          // in-session error into a boot crash loop — the loader re-applies
+          // the flipped rows on every start. The frontend already shows the
+          // plugin as still disabled, and the next explicit enable retries
+          // cleanly. Disables keep their unconditional write: a failed
+          // unmount leaves the plugin live in-session, and the user asked
+          // for it OFF — the durable disable is then the contract, not an
+          // error.
+          const patchGate = ok || !enabled
+          if (patchRows.length > 0 && patchGate) {
             for (const rowId of patchRows) {
               const result = enabled ? await enableRow(userPatchPath, rowId) : await disableRow(userPatchPath, rowId)
               if (!result.ok && patchWrite === null) patchWrite = result
@@ -2470,11 +2536,8 @@ export function mountMarketRoutes(
             for (const [name, spec] of Object.entries(installed)) {
               const migration = findGitToNpmMigration(registry.plugins, spec)
               if (migration !== null) sourceMigrationFor.set(name, migration)
-              if (!spec.toLowerCase().startsWith('file:')) continue
-              const evidence = readInstalledRepoEvidence(config.profile, name, spec, activeProfileDir)
-              const entry = findCatalogEntryForLocal(registry.plugins, name, evidence.identities, evidence.hints)
-              const target = entry === null ? null : restoreTargetForLocal(entry, evidence.identities)
-              if (target !== null && NPM_NAME_RE.test(target)) onlineSourceFor.set(name, target)
+              const source = onlineSourceOf(registry.plugins, name, spec)
+              if (source !== null) onlineSourceFor.set(name, source)
             }
           } catch (error) {
             logEvent('warn', 'updates', `package source lookup failed — ${error instanceof Error ? error.message : String(error)}`)

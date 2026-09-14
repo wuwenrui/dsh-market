@@ -1,7 +1,7 @@
 {
-  "name": "dshmarket",
-  "description": "Visual plugin market inside DeepSeek Harness — browse, search, and one-click install community plugins. · DSH 可视化插件市场：逛一逛，点一下，装好。",
-  "version": "1.45.0",
+  "name": "@lawyer-dsh/market",
+  "description": "内置律师能力市场：平台许可目录、签名制品与受控安装",
+  "version": "1.46.1-lawyer.2",
   "type": "module",
   "main": "lib/index.js",
   "types": "lib/types/index.d.ts",
@@ -33,11 +33,13 @@
     "snapshot": "curl -sf https://awesome-dsh-plugin.com/plugins.json -o data/registry-snapshot.json && curl -sf https://awesome-dsh-plugin.com/readmes.json -o data/readmes-snapshot.json",
     "check:web-auth-capture": "node scripts/check-web-auth-capture.mjs",
     "test:web": "node scripts/check-web-auth-capture.mjs && vitest run --config vitest.web.config.ts",
-    "build:site": "node scripts/build-site.mjs"
+    "build:site": "node scripts/build-site.mjs",
+    "test:managed-web": "node ../lawyer-harness/tests/managed/product.e2e.mjs"
   },
   "dependencies": {
-    "js-yaml": "^4.1.0",
-    "undici": "^7.29.0"
+    "js-yaml": "4.3.1",
+    "tar": "7.5.22",
+    "undici": "7.29.0"
   },
   "peerDependencies": {
     "@deepseek-ai/cordis": "^4.0.1",
@@ -49,13 +51,6 @@
       "patch": "./cordis.patch.yml"
     },
     "client": {
-      "inject": [
-        "@deepseek-ai/dsh-client-connection",
-        "@deepseek-ai/dsh-client-runtime",
-        "@deepseek-ai/dsh-client-locale",
-        "@deepseek-ai/dsh-client-ui-settings",
-        "@deepseek-ai/dsh-client-ui-theme"
-      ],
       "platform": "web"
     }
   },
@@ -70,7 +65,15 @@
     },
     "./client": "./client/client.js",
     "./cordis.patch.yml": "./cordis.patch.yml",
-    "./package.json": "./package.json"
+    "./package.json": "./package.json",
+    "./managed-engine": {
+      "types": "./lib/types/managed/engine.d.ts",
+      "default": "./lib/managed/engine.js"
+    },
+    "./managed-process": {
+      "types": "./lib/types/managed/process.d.ts",
+      "default": "./lib/managed/process.js"
+    }
   },
   "files": [
     "lib",
@@ -97,6 +100,7 @@
     "lightningcss": "^1.33.0",
     "marked": "^18.0.10",
     "playwright": "^1.62.1",
+    "pnpm": "11.7.0",
     "react": "^18.3.1",
     "react-dom": "~18.3.1",
     "tsdown": "^0.22.14",
@@ -113,5 +117,6 @@
     "@deepseek-ai/schemastery": {
       "optional": true
     }
-  }
+  },
+  "private": true
 }

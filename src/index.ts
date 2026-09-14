@@ -1,109 +1,26 @@
-/**
- * dsh-market host entry: mounts the market's HTTP routes once the profile
- * composes the webServer and shell services.
- */
-
+/** Managed lawyer-market entry. The unrestricted community routes are not mounted. */
 import type { Context } from '@deepseek-ai/cordis'
-import { createDesktopPluginRuntime, type DesktopPnpmLike } from './dsh-cli.ts'
-import { mountMarketRoutes, type MarketConfig, type MarketHost } from './routes.ts'
-import { installMarketSettings } from './settings.ts'
-import type { AgentsServiceLike } from './agents.ts'
+import { mountManagedMarket, type LawyerPlatform } from './managed/routes.ts'
+import { ManagedError } from './managed/catalog.ts'
+import type { MarketHost } from './routes.ts'
 
-export const name = 'dsh-market'
-
-/** Optional cordis.yml configuration; profile defaults to `web`. */
-export type Config = Partial<Pick<MarketConfig, 'profile' | 'allowRestart' | 'maxSnapshots'>>
-
-/** Structural subset of DSH Desktop's public `desktopProfiles` contract. */
-interface DesktopProfilesLike {
-  readonly current: {
-    readonly name: string
-    readonly dir: string
+declare module '@deepseek-ai/cordis' { interface Context { lawyerPlatform: LawyerPlatform } }
+export const name = 'lawyer-market'
+export const inject = ['webServer', 'loader', 'lawyerPlatform']
+/** Mount only the managed operations after the product controller is available. */
+export function apply(ctx: Context, config?: Record<string, never>): void {
+  if (config !== undefined && Object.keys(config).length > 0) throw new ManagedError('PRODUCT_OWNED', '市场配置由产品管理', 403)
+  if (ctx.lawyerPlatform === undefined) throw new ManagedError('PLATFORM_REQUIRED', '此市场必须由受管法律产品装载', 403)
+  // 一键重启是外壳能力（LawyerDesk 注入 desktopRuntime）；web 形态没有它，
+  // 市场界面据此隐藏按钮——插件本身不依赖内核改动，也不强求该能力存在。
+  const platform: LawyerPlatform = {
+    ...ctx.lawyerPlatform,
+    restart: async () => {
+      const runtime = (ctx as { get?(name: string): unknown }).get?.('desktopRuntime') as { requestRestart?: () => Promise<void> } | undefined
+      if (typeof runtime?.requestRestart !== 'function') return false
+      void runtime.requestRestart()
+      return true
+    },
   }
-}
-
-interface MarketEffectHost extends MarketHost {
-  effect(
-    callback: () => (() => void | Promise<void>),
-    label: string,
-  ): void
-}
-
-/**
- * Register the market against the host context.
- * @param ctx - Host context that may acquire webServer and shell services.
- * @param config - Optional profile override from the loader.
- */
-/**
- * The profile this host process actually booted (`--profile <name>` on the
- * dsh CLI invocation). Without it the market would default to `web` and
- * installs from a test/secondary profile would mutate the real one.
- */
-function argvProfile(): string | undefined {
-  const argv = process.argv
-  const flag = argv.indexOf('--profile')
-  if (flag !== -1 && flag + 1 < argv.length && !argv[flag + 1].startsWith('-')) return argv[flag + 1]
-  return undefined
-}
-
-/**
- * Resolve the host's `agents` inventory lazily — at request time, not at
- * market startup, so the guard sees whichever agents exist by the time an
- * update is asked for. Hosts without the service return undefined and the
- * update route stays open (see src/agents.ts).
- */
-function agentsLookupOf(ctx: Context): () => AgentsServiceLike | undefined {
-  return () => ctx.get('agents') as AgentsServiceLike | undefined
-}
-
-export function apply(ctx: Context, config?: Config): void {
-  ctx.inject(['webServer', 'loader'], (hostCtx: Context) => {
-    const host = hostCtx as unknown as MarketEffectHost
-    const desktopProfiles = ctx.get('desktopProfiles') as DesktopProfilesLike | undefined
-    if (desktopProfiles === undefined) {
-      const resolved: MarketConfig = {
-        profile: config?.profile ?? argvProfile() ?? 'web',
-        // Left UNDEFINED when unconfigured, deliberately: `?? true` here
-        // would turn "the operator said nothing" into "the operator said
-        // yes", and restartAllowed() could no longer tell them apart — which
-        // is exactly the distinction supervisor detection needs (#229).
-        allowRestart: config?.allowRestart,
-        maxSnapshots: config?.maxSnapshots,
-      }
-      // Offer allowRestart as a switch on the settings page. Deliberately
-      // NOT in the Desktop branch below: there the shell owns the process
-      // lifecycle and the value is forced false, so it is not the user's to
-      // choose. No-ops on a host without a settings service.
-      installMarketSettings(ctx, resolved)
-      host.effect(() => mountMarketRoutes(host, resolved, undefined, agentsLookupOf(ctx)), 'dsh-market: http routes')
-      return
-    }
-
-    // Desktop's supported cross-environment contract guarantees that
-    // desktopProfiles exists before Loader entries mount, and prescribes this
-    // presence check plus a nested desktopPnpm injection:
-    // https://github.com/anywhere-labs/deepseek-harness-desktop/blob/4f68147091e585aaa1d815f99d30a657b3842d7c/dsh-plugin-desktop/docs/plugin-services.md#L190-L243
-    // Ordinary DSH keeps the existing CLI path above.
-    hostCtx.inject(['desktopPnpm'], (desktopCtx: Context) => {
-      const current = desktopProfiles.current
-      const service = (desktopCtx as unknown as { desktopPnpm: DesktopPnpmLike }).desktopPnpm
-      const runtime = createDesktopPluginRuntime(service, current.dir)
-      const resolved: MarketConfig = {
-        profile: current.name,
-        profileDirectory: current.dir,
-        // Relaunching a raw Electron process would bypass Desktop's launcher
-        // lifecycle. The shell remains responsible for restart in this mode.
-        allowRestart: false,
-        maxSnapshots: config?.maxSnapshots,
-      }
-      const desktopHost = desktopCtx as unknown as MarketEffectHost
-      desktopHost.effect(() => {
-        const disposeRoutes = mountMarketRoutes(host, resolved, runtime, agentsLookupOf(ctx))
-        return async () => {
-          disposeRoutes()
-          await runtime.dispose()
-        }
-      }, 'dsh-market: Desktop http routes and package operations')
-    })
-  })
+  ctx.effect(() => mountManagedMarket(ctx as unknown as MarketHost, platform), 'lawyer-market: managed routes')
 }

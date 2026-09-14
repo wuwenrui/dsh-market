@@ -1,4 +1,3 @@
-# dsh bundle patch: inserts this plugin into a profile's layer stack.
 - insert:
-    - id: dsh-market
-      name: 'dshmarket'
+    - id: lawyer-market
+      name: '@lawyer-dsh/market'
