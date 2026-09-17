@@ -97,7 +97,16 @@ describe('classifyPnpmFailure', () => {
     expect(failed?.pkg).toBe('dsh-passwords')
     // Says which plugin, that nothing was broken, and what to do about it.
     expect(failed?.message).toContain('dsh-passwords')
-    expect(failed?.message).toContain('没有被破坏')
+    // Deliberately NOT "the installed version is intact". That promise was
+    // here and it was false: pnpm's renameOverwrite clears as much of the
+    // target directory as it can before retrying the rename, so files beside
+    // the one it cannot remove may already be deleted (#608 by @Euezb, who
+    // measured it: with only the directory inode locked, `perf/*.js` was gone
+    // and `index.js` survived). The route now checks whether the entry
+    // survived instead of assuming, and the message points at that check.
+    expect(failed?.message).not.toContain('没有被破坏')
+    expect(failed?.message).toContain('旁边的内容可能已经被删')
+    expect(failed?.message).toContain('入口是否还在')
     expect(failed?.message).toContain('quit DeepSeek Harness')
     // Not retried: the process that would retry is the one holding the files.
     expect(failed?.recoverable).toBe(false)
@@ -122,6 +131,16 @@ describe('classifyPnpmFailure', () => {
     // A page refresh is what the uninstall flow suggests, and it is exactly
     // the thing that does not release a native module.
     expect(failed?.message).toContain('not a page refresh')
+  })
+
+  it('classifies pnpm 12\'s wording of the refused swap the same way (#608)', () => {
+    // pnpm 12's native CLI reports the same refused swap without an
+    // ERR_PNPM_ code, seen on macOS with the target directory locked; the
+    // wording after the colon is the OS error and differs per platform.
+    const failed = classifyPnpmFailure('× adding a new package\n  ╰─▶ failed to remove existing directory "/p/web/node_modules/left-pad" prior to swap: Operation not permitted (os error 1)')
+    expect(failed?.code).toBe('windows-file-locked')
+    expect(failed?.recoverable).toBe(false)
+    expect(failed?.message).not.toContain('undefined')
   })
 
   it('classifies a locked rename with no readable package name (#389)', () => {

@@ -1,6 +1,6 @@
 # 受管律师能力市场
 
-本项目基于 [dsh-market](https://github.com/dsh-market/dsh-market) 1.45.0 改造，保留上游 MIT 许可证与署名。包名为 `@lawyer-dsh/market`，由法律产品内置，不是装进任意 Web 或第三方 Desktop profile 的通用市场。
+本项目基于 [dsh-market](https://github.com/dsh-market/dsh-market) 1.47.0 改造，保留上游 MIT 许可证与署名。包名为 `@lawyer-dsh/market`，由法律产品内置，不是装进任意 Web 或第三方 Desktop profile 的通用市场。
 
 ## 产品行为
 

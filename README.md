@@ -1,6 +1,6 @@
 # Managed Lawyer Market
 
-This is the managed legal-product fork of [dsh-market](https://github.com/dsh-market/dsh-market), based on upstream 1.46.1. The upstream MIT license and attribution are retained. The package is `@lawyer-dsh/market`; it is not a standalone replacement to install into an arbitrary web or Desktop profile.
+This is the managed legal-product fork of [dsh-market](https://github.com/dsh-market/dsh-market), based on upstream 1.47.0. The upstream MIT license and attribution are retained. The package is `@lawyer-dsh/market`; it is not a standalone replacement to install into an arbitrary web or Desktop profile.
 
 ## Product behavior
 
