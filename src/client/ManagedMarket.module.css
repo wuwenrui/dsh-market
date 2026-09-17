@@ -371,6 +371,27 @@
   margin-left: auto;
 }
 
+/* 「已更新，需要重启」是刚做完事的状态：用实心品牌色，比「已安装」更显眼。 */
+.badge[data-kind='updated'] {
+  background: var(--mm-brand);
+  color: #fff;
+}
+
+/* 能力自己的设置面板就地展开在卡片里：与卡片同宽、低一层的背景，
+   进出时不改变列宽（面板内部自己滚动）。 */
+.cardSettings {
+  margin-top: 8px;
+  padding: 10px 12px;
+  border-top: 1px solid var(--mm-line-2);
+  background: var(--mm-surface-2);
+  border-radius: 8px;
+  min-width: 0;
+}
+
+.cardSettings > * {
+  min-width: 0;
+}
+
 .badgeOwned,
 .badge[data-kind='owned'] {
   background: var(--mm-info-soft);

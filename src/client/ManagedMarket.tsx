@@ -185,13 +185,14 @@ function CardColumns({ count, children }: { count: number; children: ReactNode }
  * An in-flight operation for this capability renders inside the card's body,
  * so the progress always sits on the row the user actually clicked.
  */
-function CapabilityCard({ category, name, meta, description, badges, progress, action }: {
+function CapabilityCard({ category, name, meta, description, badges, progress, settings, action }: {
   category: string
   name: string
   meta: string
   description: string
   badges: ReactNode
   progress?: ReactNode
+  settings?: ReactNode
   action: ReactNode
 }) {
   const mark = category.trim() === '' ? name.trim().slice(0, 1) : category.trim().slice(0, 1)
@@ -205,12 +206,19 @@ function CapabilityCard({ category, name, meta, description, badges, progress, a
       <p className={styles.meta}>{meta}</p>
       {description === '' ? null : <p className={styles.description}>{description}</p>}
       {progress}
+      {settings}
     </div>
     <div className={styles.cardActions}>{action}</div>
   </article>
 }
 
-export function ManagedMarketSection({ t }: { t: ManagedTranslate }) {
+export function ManagedMarketSection({ t, renderSlot, useCapabilities }: {
+  t: ManagedTranslate
+  /** 只有本分区声明了 `lawyer.capability.settings` 才会拿到；测试里可以不给。 */
+  renderSlot?: (name: 'lawyer.capability.settings', owner: unknown, options?: { only?: string }) => ReactNode
+  /** 已贡献设置面板的能力目录（id + 显示名），由 apply 的 inject face 投影。 */
+  useCapabilities?: () => readonly { id: string; label: string }[]
+}) {
   const [catalog, setCatalog] = useState<Catalog | null>(null), [installed, setInstalled] = useState<Installed[]>([])
   const [status, setStatus] = useState<Status>({ busy: false, stage: 'idle', restartRequired: false })
   const [error, setError] = useState(''), [operationError, setOperationError] = useState(''), [busy, setBusy] = useState(false)
@@ -219,6 +227,13 @@ export function ManagedMarketSection({ t }: { t: ManagedTranslate }) {
   /** 正在执行的操作属于哪个能力：进度就画在那张卡片上，而不是页面顶部的一块。
    *  「重启后生效」不是继续安装的前置条件，所以这个状态只表示「当前这一个操作」。 */
   const [running, setRunning] = useState<{ id: string; path: PendingOperation['path'] } | null>(null)
+  /** 本次页面生命周期内刚装/刚更新的能力：卡片上要留一条「已更新，需要重启」。
+   *  重启会重新加载页面，这个集合自然清空，不需要持久化。 */
+  const [updatedIds, setUpdatedIds] = useState<readonly string[]>([])
+  /** 批量更新的进度：分母是可更新能力数，分子是已完成的个数。 */
+  const [batch, setBatch] = useState<{ done: number; total: number } | null>(null)
+  /** 卡片里展开的是哪个能力的设置面板（同一时间只展开一个）。 */
+  const [expandedId, setExpandedId] = useState<string | null>(null)
   const [restartPhase, setRestartPhase] = useState<'idle' | 'restarting' | 'done' | 'timeout' | 'unavailable'>('idle')
   const [tab, setTab] = useState<'installed' | 'available'>('installed')
   /** 只在首次加载时定默认页：什么都没装的人该直接看到可装的东西，
@@ -246,16 +261,49 @@ export function ManagedMarketSection({ t }: { t: ManagedTranslate }) {
     const timer = setInterval(() => { void request<Status>('status').then(setStatus).catch(() => undefined) }, 700)
     return () => clearInterval(timer)
   }, [busy])
+  /** 真正执行一次插件操作。安装与更新由点击直接触发（点按钮就是意图，不再二次确认）；
+   *  卸载仍然要确认，因为它是拿掉既有能力。 */
+  const start = async (operation: PendingOperation): Promise<boolean> => {
+    setBusy(true); setRunning({ id: operation.id, path: operation.path }); setOperationError('')
+    try {
+      await request(operation.path, { id: operation.id, version: operation.version })
+      if (operation.path !== 'uninstall') {
+        setUpdatedIds(previous => previous.includes(operation.id) ? previous : [...previous, operation.id])
+        // 安装/更新完成后留下「重启生效」的提示；卸载不需要重启
+        sessionStorage.setItem('dshm-managed-pending-restart', '1')
+      }
+      return true
+    } catch (e) {
+      setOperationError(e instanceof Error ? e.message : String(e))
+      return false
+    } finally { setRunning(null); setBusy(false) }
+  }
   const run = async () => {
     const operation = pending
     if (operation === null) return
-    setPending(null); setBusy(true); setRunning({ id: operation.id, path: operation.path }); setOperationError('')
-    try {
-      await request(operation.path, { id: operation.id, version: operation.version })
-      await load()
-      // 安装/更新完成后留下「重启生效」的提示；卸载不需要重启
-      if (operation.path !== 'uninstall') sessionStorage.setItem('dshm-managed-pending-restart', '1')
-    } catch (e) { setOperationError(e instanceof Error ? e.message : String(e)) } finally { setBusy(false); setRunning(null) }
+    setPending(null)
+    const ok = await start(operation)
+    if (ok) await load()
+  }
+  /** 全部更新：一次点击把目录里所有「有新版」的能力按顺序更新完。
+   *  进度画在正在处理的那张卡片上，已完成的卡片留「已更新，需要重启」。 */
+  const runAll = async () => {
+    if (busy || catalog === null) return
+    const targets = installed.flatMap(item => {
+      const known = catalog.plugins.find(p => p.id === item.id)
+      return known === undefined || known.version === item.version || !known.compatible ? [] : [{ item, known }]
+    })
+    if (targets.length === 0) return
+    setOperationError(''); setBatch({ done: 0, total: targets.length })
+    let failed = 0
+    for (const { item, known } of targets) {
+      const ok = await start({ path: 'update', id: item.id, name: known.name, version: known.version, description: known.description, category: known.category, source: known.source, from: item.version })
+      if (!ok) failed += 1
+      setBatch(previous => previous === null ? null : { ...previous, done: previous.done + 1 })
+    }
+    setBatch(null)
+    await load()
+    if (failed > 0) setOperationError(t('failed'))
   }
   const startRestart = async () => {
     if (restartingRef.current) return
@@ -281,10 +329,10 @@ export function ManagedMarketSection({ t }: { t: ManagedTranslate }) {
     setRefreshing(true)
     try { await load() } catch (e) { setError(String(e instanceof Error ? e.message : e)) } finally { setRefreshing(false) }
   }
-  const askInstall = (item: Catalog['plugins'][number], current: Installed | undefined) => setPending({
+  const askInstall = (item: Catalog['plugins'][number], current: Installed | undefined) => { void start({
     path: current === undefined ? 'install' : 'update', id: item.id, name: item.name, version: item.version,
     description: item.description, category: item.category, source: item.source, from: current?.version ?? '',
-  })
+  }).then(ok => ok ? load() : undefined) }
   const askUninstall = (item: Installed) => setPending({
     path: 'uninstall', id: item.id,
     name: catalog?.plugins.find(p => p.id === item.id)?.name ?? item.id,
@@ -294,6 +342,9 @@ export function ManagedMarketSection({ t }: { t: ManagedTranslate }) {
   // 只锁「正在跑的那一次操作」：重启提示还在时，用户可以直接接着装下一个能力，
   // 重启只是让所有已装能力一起生效。
   const locked = busy
+  /** 已贡献设置面板的能力（来自各插件的 `lawyer.capability.settings` 注册）。 */
+  const capabilities = useCapabilities?.() ?? []
+  const hasSettings = (id: string) => renderSlot !== undefined && capabilities.some(entry => entry.id === id)
   const keyword = query.trim().toLowerCase()
   const match = (fields: Array<string | undefined>) => keyword === '' || fields.some(field => String(field ?? '').toLowerCase().includes(keyword))
   const installedRows = installed
@@ -313,6 +364,10 @@ export function ManagedMarketSection({ t }: { t: ManagedTranslate }) {
         <p className={styles.subtitle}>{t('managed')}</p>
       </div>
       <div className={styles.headerActions}>
+        {/* 有可更新能力就给一个批量入口：律师不必一个个点。批量期间按钮自己显示进度。 */}
+        {updatableCount > 0 ? <button type="button" className={styles.actionPrimary} onClick={() => void runAll()} disabled={busy}>
+          {batch === null ? `${t('updateAll')} (${updatableCount})` : `${t('updatingAll')} ${batch.done}/${batch.total}`}
+        </button> : null}
         <button type="button" className={styles.actionGhost} onClick={() => void refresh()} disabled={busy || refreshing}>{refreshing ? t('refreshing') : t('retry')}</button>
       </div>
     </header>
@@ -356,9 +411,17 @@ export function ManagedMarketSection({ t }: { t: ManagedTranslate }) {
               badges={<>
                 <span className={styles.badge} data-kind="installed">{t('stateInstalled')}</span>
                 {updatable ? <span className={styles.badge} data-kind="update">{t('stateUpdatable')}</span> : null}
+                {updatedIds.includes(item.id) ? <span className={styles.badge} data-kind="updated">{t('updatedRestart')}</span> : null}
               </>}
               progress={progressFor(item.id)}
+              settings={hasSettings(item.id) && expandedId === item.id
+                ? <div className={styles.cardSettings}>{renderSlot?.('lawyer.capability.settings', {}, { only: item.id })}</div>
+                : undefined}
               action={progressFor(item.id) === null ? <>
+                {hasSettings(item.id) ? <button type="button" className={styles.actionGhost} aria-expanded={expandedId === item.id}
+                  onClick={() => setExpandedId(expandedId === item.id ? null : item.id)} disabled={busy}>
+                  {expandedId === item.id ? t('hideSettings') : t('settings')}
+                </button> : null}
                 <button type="button" className={styles.actionGhost} onClick={() => askUninstall(item)} disabled={busy}>{t('remove')}</button>
                 {updatable ? <button type="button" className={styles.actionPrimary} onClick={() => askInstall(known, item)} disabled={locked}>{t('update')}</button> : null}
               </> : null}
@@ -385,6 +448,7 @@ export function ManagedMarketSection({ t }: { t: ManagedTranslate }) {
           badges={<>
             <span className={styles.badge} data-kind={item.source === 'community' ? 'community' : 'owned'}>{t(item.source === 'community' ? 'community' : 'owned')}</span>
             {same ? <span className={styles.badge} data-kind="installed">{t('stateInstalled')}</span> : null}
+            {updatedIds.includes(item.id) ? <span className={styles.badge} data-kind="updated">{t('updatedRestart')}</span> : null}
           </>}
           progress={progressFor(item.id)}
           action={progressFor(item.id) !== null ? null : <button type="button" className={same || !item.compatible ? styles.actionGhost : styles.actionPrimary}

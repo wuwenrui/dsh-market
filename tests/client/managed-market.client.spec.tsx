@@ -40,6 +40,8 @@ const t = (key: string) => ({
   installed: '已安装', available: '可安装能力', loading: '正在加载…', empty: '平台尚未开放可安装的能力',
   install: '安装', update: '更新', remove: '卸载', incompatible: '暂不兼容当前版本', revision: '目录版本',
   confirmTitleInstall: '确认安装这个能力？', confirmRunInstall: '确认安装', cancel: '取消',
+  confirmTitleUninstall: '确认卸载这个能力？', confirmRunUninstall: '确认卸载', confirmNoteUninstall: '卸载会移除这个能力。',
+  updateAll: '全部更新', updatingAll: '正在全部更新…', updatedRestart: '已更新，需要重启', settings: '设置', hideSettings: '收起设置',
   confirmNote: '安装会改动工作台环境。', dialogMetaName: '能力', dialogMetaVersion: '版本', dialogMetaCategory: '分类',
   dialogMetaSource: '来源', dialogMetaState: '当前状态', stateNotInstalled: '未安装', stateInstalled: '已安装', stateUpdatable: '可更新',
   owned: '平台审核', community: '社区', current: '当前版本',
@@ -94,21 +96,29 @@ beforeEach(() => {
 afterEach(() => { cleanup(); vi.unstubAllGlobals(); vi.restoreAllMocks() })
 
 describe('律师能力中心', () => {
-  it('安装前弹出自绘确认弹窗（不再用浏览器原生 confirm），并展示能力信息', async () => {
+  it('安装/更新不再二次确认：点一下直接开始，且不发浏览器原生 confirm', async () => {
     stubFetch()
     render(<ManagedMarketSection t={t} />)
     const install = await screen.findByRole('button', { name: '安装' })
     fireEvent.click(install)
 
-    const dialog = await screen.findByRole('dialog')
-    expect(dialog).toBeTruthy()
-    expect(dialog.textContent).toContain('确认安装这个能力？')
-    expect(dialog.textContent).toContain('邮件管理')
-    expect(dialog.textContent).toContain('v0.1.0')
-    expect(dialog.textContent).toContain('未安装')
+    // 点按钮就是意图：请求立刻发出，页面上不出现任何确认弹窗。
+    await waitFor(() => { expect(calls.some(call => call.path === '/dsh-market/install')).toBe(true) })
+    expect(screen.queryByRole('dialog')).toBeNull()
     expect(window.confirm).not.toHaveBeenCalled()
-    // 还没确认，不能发安装请求
-    expect(calls.some(call => call.path === '/dsh-market/install')).toBe(false)
+    expect(calls.find(call => call.path === '/dsh-market/install')?.body).toEqual({ id: 'lawyer-mail', version: '0.1.0' })
+  })
+
+  it('卸载仍然要确认：弹窗展示能力信息，取消就不发请求', async () => {
+    stubFetch({ installed: [{ id: 'lawyer-mail', packageName: '@lawyer-dsh/lawyer-mail', version: '0.1.0' }] })
+    render(<ManagedMarketSection t={t} />)
+    fireEvent.click(await screen.findByRole('button', { name: '卸载' }))
+
+    const dialog = await screen.findByRole('dialog')
+    expect(dialog.textContent).toContain('确认卸载这个能力？')
+    expect(dialog.textContent).toContain('邮件管理')
+    fireEvent.click(screen.getByRole('button', { name: '取消' }))
+    expect(calls.some(call => call.path === '/dsh-market/uninstall')).toBe(false)
   })
 
   it('确认后才发安装请求；进度显示在正在安装的那张卡片上，且同一时间只有一个操作', async () => {
@@ -137,7 +147,6 @@ describe('律师能力中心', () => {
     render(<ManagedMarketSection t={t} />)
     const card = await cardOf('邮件管理')
     fireEvent.click(within(card).getByRole('button', { name: '安装' }))
-    fireEvent.click(await screen.findByRole('button', { name: '确认安装' }))
 
     const progress = await screen.findByRole('progressbar')
     expect(progress.getAttribute('aria-valuemin')).toBe('1')
@@ -180,7 +189,6 @@ describe('律师能力中心', () => {
 
     render(<ManagedMarketSection t={t} />)
     fireEvent.click(within(await cardOf('邮件管理')).getByRole('button', { name: '安装' }))
-    fireEvent.click(await screen.findByRole('button', { name: '确认安装' }))
     await screen.findByText('安装已完成，重启后生效')
     expect(installs).toEqual(['lawyer-mail'])
 
@@ -189,8 +197,9 @@ describe('律师能力中心', () => {
     const next = within(await cardOf('立案材料与批次管理')).getByRole('button', { name: '安装' }) as HTMLButtonElement
     expect(next.disabled).toBe(false)
     fireEvent.click(next)
-    fireEvent.click(await screen.findByRole('button', { name: '确认安装' }))
     await waitFor(() => { expect(installs).toEqual(['lawyer-mail', 'lawyer-filing']) })
+    // 装过的能力在自己的卡片上留下「已更新，需要重启」。
+    expect(within(await cardOf('邮件管理')).getByText('已更新，需要重启')).toBeTruthy()
   })
 
   it('安装后提示需要重启，并提供「立即重启」入口；点击会真的调用重启接口', async () => {
@@ -215,11 +224,77 @@ describe('律师能力中心', () => {
     })
   })
 
+  it('全部更新：一次点击把所有可更新能力依次更完，进度落在各自卡片上', async () => {
+    const installed = [
+      { id: 'lawyer-mail', packageName: '@lawyer-dsh/lawyer-mail', version: '0.0.1' },
+      { id: 'lawyer-filing', packageName: '@lawyer-dsh/lawyer-filing', version: '0.0.1' },
+    ]
+    const updates: string[] = []
+    calls = []
+    vi.stubGlobal('fetch', vi.fn((input: unknown, init?: RequestInit) => {
+      const path = String(input).split('?')[0].replace(/^.*\/dsh-market\//, '/dsh-market/')
+      const body = init?.body ? JSON.parse(String(init.body)) as { id?: string } : undefined
+      calls.push({ path, method: (init?.method ?? 'GET').toUpperCase(), body })
+      if (path === '/dsh-market/update' && body?.id !== undefined) {
+        updates.push(body.id)
+        const row = installed.find(item => item.id === body.id)
+        if (row !== undefined) row.version = body.id === 'lawyer-mail' ? '0.1.0' : '0.3.1'
+        return Promise.resolve(new Response(JSON.stringify({ ok: true }), { status: 200 }))
+      }
+      const table: Record<string, unknown> = {
+        '/dsh-market/installed': { installed, busy: false, stage: 'idle', restartRequired: true },
+        '/dsh-market/status': { busy: false, stage: 'idle', restartRequired: true },
+        '/dsh-market/registry': TWO,
+      }
+      return Promise.resolve(new Response(JSON.stringify(table[path] ?? {}), { status: 200 }))
+    }))
+
+    render(<ManagedMarketSection t={t} />)
+    const all = await screen.findByRole('button', { name: /全部更新 \(2\)/ })
+    fireEvent.click(all)
+
+    await waitFor(() => { expect(updates).toEqual(['lawyer-mail', 'lawyer-filing']) })
+    // 两个能力各自在自己卡片上留下「已更新，需要重启」。
+    await waitFor(() => { expect(screen.getAllByText('已更新，需要重启')).toHaveLength(2) })
+    expect(within(await cardOf('邮件管理')).getByText('已更新，需要重启')).toBeTruthy()
+    expect(within(await cardOf('立案材料与批次管理')).getByText('已更新，需要重启')).toBeTruthy()
+    // 都更新完，批量入口自己消失，页面级重启提示还在。
+    await waitFor(() => { expect(screen.queryByRole('button', { name: /全部更新/ })).toBeNull() })
+    expect(screen.getByText('安装已完成，重启后生效')).toBeTruthy()
+  })
+
+  it('能力自己的设置就在卡片里展开：只渲染这个能力的面板，没有面板的能力不给入口', async () => {
+    const asked: string[] = []
+    const renderSlot = (_name: string, _owner: unknown, options?: { only?: string }) => {
+      asked.push(String(options?.only))
+      return <div data-testid="capability-panel">{`面板 ${options?.only}`}</div>
+    }
+    stubFetch({ catalog: TWO, installed: [
+      { id: 'lawyer-mail', packageName: '@lawyer-dsh/lawyer-mail', version: '0.1.0' },
+      { id: 'lawyer-filing', packageName: '@lawyer-dsh/lawyer-filing', version: '0.3.1' },
+    ] })
+    render(<ManagedMarketSection t={t} renderSlot={renderSlot as never} useCapabilities={() => [{ id: 'lawyer-mail', label: '邮件管理' }]} />)
+
+    const mail = await cardOf('邮件管理')
+    // 默认收起：不挂载面板，也不产生渲染请求。
+    expect(within(mail).queryByTestId('capability-panel')).toBeNull()
+    expect(asked).toEqual([])
+    fireEvent.click(within(mail).getByRole('button', { name: '设置' }))
+    expect(await within(mail).findByTestId('capability-panel')).toBeTruthy()
+    expect(asked).toEqual(['lawyer-mail'])
+    // 收起后卸载。
+    fireEvent.click(within(mail).getByRole('button', { name: '收起设置' }))
+    await waitFor(() => { expect(within(mail).queryByTestId('capability-panel')).toBeNull() })
+    // 没有贡献设置面板的能力不显示「设置」，卸载入口仍在。
+    const filing = await cardOf('立案材料与批次管理')
+    expect(within(filing).queryByRole('button', { name: '设置' })).toBeNull()
+    expect(within(filing).getByRole('button', { name: '卸载' })).toBeTruthy()
+  })
+
   it('安装失败时显示后端原因', async () => {
     stubFetch({ install: { __status: 409, error: '此能力尚未兼容当前产品版本' } })
     render(<ManagedMarketSection t={t} />)
     fireEvent.click(await screen.findByRole('button', { name: '安装' }))
-    fireEvent.click(await screen.findByRole('button', { name: '确认安装' }))
     await waitFor(() => { expect(screen.getByRole('alert').textContent).toContain('此能力尚未兼容当前产品版本') })
   })
 })
