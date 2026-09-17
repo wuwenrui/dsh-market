@@ -41,7 +41,7 @@ const t = (key: string) => ({
   install: '安装', update: '更新', remove: '卸载', incompatible: '暂不兼容当前版本', revision: '目录版本',
   confirmTitleInstall: '确认安装这个能力？', confirmRunInstall: '确认安装', cancel: '取消',
   confirmTitleUninstall: '确认卸载这个能力？', confirmRunUninstall: '确认卸载', confirmNoteUninstall: '卸载会移除这个能力。',
-  updateAll: '全部更新', updatingAll: '正在全部更新…', updatedRestart: '已更新，需要重启', settings: '设置', hideSettings: '收起设置',
+  updateAll: '全部更新', updatingAll: '正在全部更新…', updatedRestart: '已更新，需要重启', settings: '设置', hideSettings: '收起设置', noSettings: '这个能力没有可配置项。',
   confirmNote: '安装会改动工作台环境。', dialogMetaName: '能力', dialogMetaVersion: '版本', dialogMetaCategory: '分类',
   dialogMetaSource: '来源', dialogMetaState: '当前状态', stateNotInstalled: '未安装', stateInstalled: '已安装', stateUpdatable: '可更新',
   owned: '平台审核', community: '社区', current: '当前版本',
@@ -263,17 +263,18 @@ describe('律师能力中心', () => {
     expect(screen.getByText('安装已完成，重启后生效')).toBeTruthy()
   })
 
-  it('能力自己的设置就在卡片里展开：只渲染这个能力的面板，没有面板的能力不给入口', async () => {
+  it('能力自己的设置就在卡片里展开：只渲染这个能力的面板，没有面板的能力给一句说明', async () => {
     const asked: string[] = []
     const renderSlot = (_name: string, _owner: unknown, options?: { only?: string }) => {
       asked.push(String(options?.only))
-      return <div data-testid="capability-panel">{`面板 ${options?.only}`}</div>
+      // 只给邮件能力贡献面板，filing 返回 null 模拟「没注册设置」。
+      return options?.only === 'lawyer-mail' ? <div data-testid="capability-panel">面板 lawyer-mail</div> : null
     }
     stubFetch({ catalog: TWO, installed: [
       { id: 'lawyer-mail', packageName: '@lawyer-dsh/lawyer-mail', version: '0.1.0' },
       { id: 'lawyer-filing', packageName: '@lawyer-dsh/lawyer-filing', version: '0.3.1' },
     ] })
-    render(<ManagedMarketSection t={t} renderSlot={renderSlot as never} useCapabilities={() => [{ id: 'lawyer-mail', label: '邮件管理' }]} />)
+    render(<ManagedMarketSection t={t} renderSlot={renderSlot as never} />)
 
     const mail = await cardOf('邮件管理')
     // 默认收起：不挂载面板，也不产生渲染请求。
@@ -285,9 +286,10 @@ describe('律师能力中心', () => {
     // 收起后卸载。
     fireEvent.click(within(mail).getByRole('button', { name: '收起设置' }))
     await waitFor(() => { expect(within(mail).queryByTestId('capability-panel')).toBeNull() })
-    // 没有贡献设置面板的能力不显示「设置」，卸载入口仍在。
+    // 没有贡献面板的能力：展开给一句说明，而不是空白框；卸载入口仍在。
     const filing = await cardOf('立案材料与批次管理')
-    expect(within(filing).queryByRole('button', { name: '设置' })).toBeNull()
+    fireEvent.click(within(filing).getByRole('button', { name: '设置' }))
+    expect(await within(filing).findByText('这个能力没有可配置项。')).toBeTruthy()
     expect(within(filing).getByRole('button', { name: '卸载' })).toBeTruthy()
   })
 

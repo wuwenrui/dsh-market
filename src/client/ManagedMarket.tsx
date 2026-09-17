@@ -212,12 +212,12 @@ function CapabilityCard({ category, name, meta, description, badges, progress, s
   </article>
 }
 
-export function ManagedMarketSection({ t, renderSlot, useCapabilities }: {
+export function ManagedMarketSection({ t, renderSlot }: {
   t: ManagedTranslate
-  /** 只有本分区声明了 `lawyer.capability.settings` 才会拿到；测试里可以不给。 */
+  /** 只有本分区声明了 `lawyer.capability.settings` 才会拿到；测试里可以不给。
+   *  `{ only: id }` 由宿主的插槽出口过滤——**不读注册账本**：动态插件的 slots 门面
+   *  只保证 register/inject 这类调用，读账本会在渲染期抛错（2026-09-17 的空白页就是这个）。 */
   renderSlot?: (name: 'lawyer.capability.settings', owner: unknown, options?: { only?: string }) => ReactNode
-  /** 已贡献设置面板的能力目录（id + 显示名），由 apply 的 inject face 投影。 */
-  useCapabilities?: () => readonly { id: string; label: string }[]
 }) {
   const [catalog, setCatalog] = useState<Catalog | null>(null), [installed, setInstalled] = useState<Installed[]>([])
   const [status, setStatus] = useState<Status>({ busy: false, stage: 'idle', restartRequired: false })
@@ -342,9 +342,13 @@ export function ManagedMarketSection({ t, renderSlot, useCapabilities }: {
   // 只锁「正在跑的那一次操作」：重启提示还在时，用户可以直接接着装下一个能力，
   // 重启只是让所有已装能力一起生效。
   const locked = busy
-  /** 已贡献设置面板的能力（来自各插件的 `lawyer.capability.settings` 注册）。 */
-  const capabilities = useCapabilities?.() ?? []
-  const hasSettings = (id: string) => renderSlot !== undefined && capabilities.some(entry => entry.id === id)
+  /** 能力自己的设置面板由插件注册进 `lawyer.capability.settings`，这里只按 id 就地渲染；
+   *  没贡献面板的能力展开后给一句说明，而不是给一个空白框。 */
+  const settingsFor = (id: string): ReactNode => {
+    if (renderSlot === undefined || expandedId !== id) return undefined
+    const panel = renderSlot('lawyer.capability.settings', {}, { only: id })
+    return <div className={styles.cardSettings}>{panel === null || panel === undefined ? <p className={styles.muted}>{t('noSettings')}</p> : panel}</div>
+  }
   const keyword = query.trim().toLowerCase()
   const match = (fields: Array<string | undefined>) => keyword === '' || fields.some(field => String(field ?? '').toLowerCase().includes(keyword))
   const installedRows = installed
@@ -414,11 +418,9 @@ export function ManagedMarketSection({ t, renderSlot, useCapabilities }: {
                 {updatedIds.includes(item.id) ? <span className={styles.badge} data-kind="updated">{t('updatedRestart')}</span> : null}
               </>}
               progress={progressFor(item.id)}
-              settings={hasSettings(item.id) && expandedId === item.id
-                ? <div className={styles.cardSettings}>{renderSlot?.('lawyer.capability.settings', {}, { only: item.id })}</div>
-                : undefined}
+              settings={settingsFor(item.id)}
               action={progressFor(item.id) === null ? <>
-                {hasSettings(item.id) ? <button type="button" className={styles.actionGhost} aria-expanded={expandedId === item.id}
+                {renderSlot !== undefined ? <button type="button" className={styles.actionGhost} aria-expanded={expandedId === item.id}
                   onClick={() => setExpandedId(expandedId === item.id ? null : item.id)} disabled={busy}>
                   {expandedId === item.id ? t('hideSettings') : t('settings')}
                 </button> : null}

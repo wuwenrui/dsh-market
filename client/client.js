@@ -161,6 +161,7 @@ window.__ModuleLoader__.load({ id: "@lawyer-dsh/market", factory: (require) => {
 			updatedRestart: "已更新，需要重启",
 			settings: "设置",
 			hideSettings: "收起设置",
+			noSettings: "这个能力没有可配置项。",
 			progressOfTotal: "已完成 {0}/{1}",
 			incompatible: "暂不兼容当前版本",
 			managed: "仅显示平台审核并允许安装的能力。插件来源与版本由平台统一管理。",
@@ -267,6 +268,7 @@ window.__ModuleLoader__.load({ id: "@lawyer-dsh/market", factory: (require) => {
 			updatedRestart: "Updated — restart to apply",
 			settings: "Settings",
 			hideSettings: "Hide settings",
+			noSettings: "This capability has nothing to configure.",
 			progressOfTotal: "{0}/{1} done",
 			incompatible: "Not compatible with this version",
 			managed: "Only centrally reviewed and approved capabilities are listed. The platform manages sources and versions.",
@@ -710,7 +712,7 @@ window.__ModuleLoader__.load({ id: "@lawyer-dsh/market", factory: (require) => {
 				]
 			});
 		}
-		function ManagedMarketSection({ t, renderSlot, useCapabilities }) {
+		function ManagedMarketSection({ t, renderSlot }) {
 			const [catalog, setCatalog] = (0, react.useState)(null), [installed, setInstalled] = (0, react.useState)([]);
 			const [status, setStatus] = (0, react.useState)({
 				busy: false,
@@ -891,9 +893,19 @@ window.__ModuleLoader__.load({ id: "@lawyer-dsh/market", factory: (require) => {
 				from: item.version
 			});
 			const locked = busy;
-			/** 已贡献设置面板的能力（来自各插件的 `lawyer.capability.settings` 注册）。 */
-			const capabilities = useCapabilities?.() ?? [];
-			const hasSettings = (id) => renderSlot !== void 0 && capabilities.some((entry) => entry.id === id);
+			/** 能力自己的设置面板由插件注册进 `lawyer.capability.settings`，这里只按 id 就地渲染；
+			*  没贡献面板的能力展开后给一句说明，而不是给一个空白框。 */
+			const settingsFor = (id) => {
+				if (renderSlot === void 0 || expandedId !== id) return void 0;
+				const panel = renderSlot("lawyer.capability.settings", {}, { only: id });
+				return /* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
+					className: ManagedMarket_module_css_default.cardSettings,
+					children: panel === null || panel === void 0 ? /* @__PURE__ */ (0, react_jsx_runtime.jsx)("p", {
+						className: ManagedMarket_module_css_default.muted,
+						children: t("noSettings")
+					}) : panel
+				});
+			};
 			const keyword = query.trim().toLowerCase();
 			const match = (fields) => keyword === "" || fields.some((field) => String(field ?? "").toLowerCase().includes(keyword));
 			const installedRows = installed.filter((item) => match([
@@ -1073,12 +1085,9 @@ window.__ModuleLoader__.load({ id: "@lawyer-dsh/market", factory: (require) => {
 										}) : null
 									] }),
 									progress: progressFor(item.id),
-									settings: hasSettings(item.id) && expandedId === item.id ? /* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
-										className: ManagedMarket_module_css_default.cardSettings,
-										children: renderSlot?.("lawyer.capability.settings", {}, { only: item.id })
-									}) : void 0,
+									settings: settingsFor(item.id),
 									action: progressFor(item.id) === null ? /* @__PURE__ */ (0, react_jsx_runtime.jsxs)(react_jsx_runtime.Fragment, { children: [
-										hasSettings(item.id) ? /* @__PURE__ */ (0, react_jsx_runtime.jsx)("button", {
+										renderSlot !== void 0 ? /* @__PURE__ */ (0, react_jsx_runtime.jsx)("button", {
 											type: "button",
 											className: ManagedMarket_module_css_default.actionGhost,
 											"aria-expanded": expandedId === item.id,
@@ -1495,11 +1504,6 @@ window.__ModuleLoader__.load({ id: "@lawyer-dsh/market", factory: (require) => {
 		* client/client.js; the only externals are the loader module table's react
 		* entries.
 		*/
-		/** 插槽注册里的 label 既可能是字符串也可能是函数（本地化由注册方负责）。 */
-		function resolveSlotLabel(value) {
-			if (typeof value === "function") return String(value() ?? "");
-			return typeof value === "string" ? value : "";
-		}
 		/**
 		* Primitives this bundle relies on that did not exist before rc.6. The
 		* primitives module is host-injected (external at build time), so on an
@@ -1528,39 +1532,6 @@ window.__ModuleLoader__.load({ id: "@lawyer-dsh/market", factory: (require) => {
 				en: managedEn
 			}), "lawyer-market: locale");
 			const t = ctx.locale.bind("lawyer-market");
-			/**
-			* 能力设置目录：读 `lawyer.capability.settings` 的注册账本，投影成页面用的
-			* 普通 observable（组件只拿到 `useCapabilities` 这个 hook，看不到账本本身）。
-			* 与宿主 ui-settings-plugins 的 tabs 目录同一套形状：版本号 + locale revision
-			* 变了才重建快照，订阅两边，能力装卸时页面立刻跟着变。
-			*/
-			const capabilityDirectory = () => {
-				let version = -1, revision = -1;
-				let rows = [];
-				return { hooks: { capabilities: {
-					getSnapshot: () => {
-						const nextVersion = ctx.slots.getVersion("lawyer.capability.settings");
-						const nextRevision = ctx.locale.getSnapshot().revision;
-						if (nextVersion !== version || nextRevision !== revision) {
-							version = nextVersion;
-							revision = nextRevision;
-							rows = ctx.slots.entries("lawyer.capability.settings").map((entry) => ({
-								id: entry.options.id ?? "",
-								label: resolveSlotLabel(entry.options.label)
-							})).sort((left, right) => left.id.localeCompare(right.id));
-						}
-						return rows;
-					},
-					subscribe: (listener) => {
-						const offLedger = ctx.slots.subscribe("lawyer.capability.settings", listener);
-						const offLocale = ctx.locale.subscribe(listener);
-						return () => {
-							offLedger();
-							offLocale();
-						};
-					}
-				} } };
-			};
 			ctx.slots.inject("settings.section", () => {
 				const a = ctx.slots.register({
 					name: "settings.section",
@@ -1576,15 +1547,13 @@ window.__ModuleLoader__.load({ id: "@lawyer-dsh/market", factory: (require) => {
 					order: 40,
 					label: () => t("market"),
 					locale: "lawyer-market",
-					inject: capabilityDirectory,
 					children: { "lawyer.capability.settings": {
 						kind: "list",
 						scope: "root"
 					} }
 				}, (ownerProps) => (0, react.createElement)(ManagedMarketSection, {
 					t,
-					renderSlot: ownerProps.renderSlot,
-					useCapabilities: ownerProps.useCapabilities
+					renderSlot: ownerProps.renderSlot
 				}));
 				return () => {
 					if (typeof a === "function") a();

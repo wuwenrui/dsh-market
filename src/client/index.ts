@@ -96,38 +96,6 @@ export function apply(ctx: MarketClientContext): void {
   ctx.effect(() => ctx.locale.register('lawyer-market', { zh: managedZh, en: managedEn }), 'lawyer-market: locale')
   const t = ctx.locale.bind('lawyer-market') as ManagedTranslate
 
-  /**
-   * 能力设置目录：读 `lawyer.capability.settings` 的注册账本，投影成页面用的
-   * 普通 observable（组件只拿到 `useCapabilities` 这个 hook，看不到账本本身）。
-   * 与宿主 ui-settings-plugins 的 tabs 目录同一套形状：版本号 + locale revision
-   * 变了才重建快照，订阅两边，能力装卸时页面立刻跟着变。
-   */
-  const capabilityDirectory = () => {
-    let version = -1, revision = -1
-    let rows: readonly { id: string; label: string }[] = []
-    return {
-      hooks: {
-        capabilities: {
-          getSnapshot: () => {
-            const nextVersion = ctx.slots.getVersion('lawyer.capability.settings')
-            const nextRevision = ctx.locale.getSnapshot().revision
-            if (nextVersion !== version || nextRevision !== revision) {
-              version = nextVersion; revision = nextRevision
-              rows = ctx.slots.entries('lawyer.capability.settings')
-                .map(entry => ({ id: entry.options.id ?? '', label: resolveSlotLabel(entry.options.label) }))
-                .sort((left, right) => left.id.localeCompare(right.id))
-            }
-            return rows
-          },
-          subscribe: (listener: () => void) => {
-            const offLedger = ctx.slots.subscribe('lawyer.capability.settings', listener)
-            const offLocale = ctx.locale.subscribe(listener)
-            return () => { offLedger(); offLocale() }
-          },
-        },
-      },
-    }
-  }
   ctx.slots.inject('settings.section', () => {
     const a = ctx.slots.register({ name: 'settings.section', id: 'models', order: 30, label: () => t('models'), locale: 'lawyer-market', inject: () => ({ t }) }, () => h(ManagedModelsSection, { t }))
     // 「律师能力」这一页同时是各能力设置页的家：能力插件把设置面板注册进
@@ -139,12 +107,10 @@ export function apply(ctx: MarketClientContext): void {
       order: 40,
       label: () => t('market'),
       locale: 'lawyer-market',
-      inject: capabilityDirectory,
       children: { 'lawyer.capability.settings': { kind: 'list', scope: 'root' } },
-    }, (ownerProps: { renderSlot?: unknown; useCapabilities?: unknown }) => h(ManagedMarketSection, {
+    }, (ownerProps: { renderSlot?: unknown }) => h(ManagedMarketSection, {
       t,
       renderSlot: ownerProps.renderSlot as never,
-      useCapabilities: ownerProps.useCapabilities as never,
     }))
     return () => { if (typeof a === 'function') a(); if (typeof b === 'function') b() }
   })

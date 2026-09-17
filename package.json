@@ -1,7 +1,7 @@
 {
   "name": "@lawyer-dsh/market",
   "description": "内置律师能力市场：平台许可目录、签名制品与受控安装",
-  "version": "1.47.0-lawyer.1",
+  "version": "1.47.0-lawyer.2",
   "type": "module",
   "main": "lib/index.js",
   "types": "lib/types/index.d.ts",
